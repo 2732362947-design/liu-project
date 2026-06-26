@@ -1,0 +1,14 @@
+[
+  {
+    "problem_id": "sample_001",
+    "problem": "求方程 x^2 - 5x + 6 = 0 的两个实数根。"
+  },
+  {
+    "problem_id": "sample_002",
+    "problem": "一个袋子里有3个红球和2个蓝球，随机取出1个球，取到红球的概率是多少？"
+  },
+  {
+    "problem_id": "sample_003",
+    "problem": "求函数 f(x)=x^2 在 x=3 处的导数值。"
+  }
+]

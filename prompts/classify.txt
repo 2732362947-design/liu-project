@@ -1,0 +1,1 @@
+Classify the math problem into one domain and give a short reason.

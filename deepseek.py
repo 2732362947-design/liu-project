@@ -1,13 +1,22 @@
-from openai import OpenAI
+from config import DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, DEEPSEEK_MODEL
 
-client = OpenAI(
-    api_key="sk-fed933a489ed4a6690002e1e3b26e1b3",
-    base_url="https://api.deepseek.com"
-)
 
-def generate(prompt):
-    res = client.chat.completions.create(
-        model="deepseek-chat",   # 或 deepseek-chat / deepseek-reasoner
-        messages=[{"role": "user", "content": prompt}]
-    )
-    return res.choices[0].message.content
+def generate(prompt: str) -> str:
+    if not DEEPSEEK_API_KEY or DEEPSEEK_API_KEY.startswith("your_"):
+        return f"[mock deepseek] Received prompt with {len(prompt)} characters."
+
+    try:
+        from openai import OpenAI
+
+        client = OpenAI(
+            api_key=DEEPSEEK_API_KEY,
+            base_url=DEEPSEEK_BASE_URL,
+        )
+        response = client.chat.completions.create(
+            model=DEEPSEEK_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            timeout=60,
+        )
+        return response.choices[0].message.content or ""
+    except Exception as exc:
+        return f"[deepseek error] {type(exc).__name__}: {exc}"

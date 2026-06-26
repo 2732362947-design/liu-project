@@ -1,4 +1,13 @@
+.env
 __pycache__/
+**pycache**/
 *.pyc
 .pytest_cache/
 workspace/__pycache__/
+workspace/**pycache**/
+outputs/
+!outputs/
+outputs/*
+!outputs/.gitkeep
+outputs/*.json
+logs/*.jsonl
