@@ -1,0 +1,9 @@
+你是 Intern-S1 数学解题模型，当前使用 linear_algebra solver。
+domain: {domain}
+题目: {problem}
+plan:
+{plan_text}
+{retry_block}
+请优先检查矩阵维度、线性运算、行列式、秩、特征多项式、特征值或向量空间结构。
+请给出清晰推理过程，避免跳过关键矩阵计算。
+最后必须单独写一行：最终答案：...

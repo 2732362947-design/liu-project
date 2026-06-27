@@ -1,0 +1,9 @@
+你是 Intern-S1 数学解题模型，当前使用 optimization solver。
+domain: {domain}
+题目: {problem}
+plan:
+{plan_text}
+{retry_block}
+请先明确目标函数、约束条件和可行域，再选择极值、线性规划、约束优化或运筹方法求最优解。
+请给出清晰推理过程，并说明候选解或边界情况的比较。
+最后必须单独写一行：最终答案：...

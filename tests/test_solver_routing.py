@@ -23,6 +23,62 @@ def test_classifier_routes_discrete_logic_to_discrete_solver():
     assert result["solver_key"] == "discrete"
 
 
+def test_classifier_routes_complex_analysis():
+    result = classify_problem("complex_analysis: 用 Cauchy 积分公式计算解析函数积分。")
+
+    assert result["domain"] == "complex_analysis"
+    assert result["solver_key"] == "complex_analysis"
+
+
+def test_classifier_routes_geometry():
+    result = classify_problem("几何：已知三角形和圆，求面积与角。")
+
+    assert result["domain"] == "geometry"
+    assert result["solver_key"] == "geometry"
+
+
+def test_classifier_routes_linear_algebra():
+    result = classify_problem("线性代数：求矩阵的特征值和秩。")
+
+    assert result["domain"] == "linear_algebra"
+    assert result["solver_key"] == "linear_algebra"
+
+
+def test_classifier_routes_number_theory():
+    result = classify_problem("数论：判断素数并计算 gcd 最大公约数。")
+
+    assert result["domain"] == "number_theory"
+    assert result["solver_key"] == "number_theory"
+
+
+def test_classifier_routes_optimization():
+    result = classify_problem("operations_research: 求线性规划的最优化解。")
+
+    assert result["domain"] == "optimization"
+    assert result["solver_key"] == "optimization"
+
+
+def test_classifier_routes_combinatorics_to_discrete():
+    result = classify_problem("combinatorics: 从 5 个元素中选法有多少种组合数？")
+
+    assert result["domain"] == "discrete_math"
+    assert result["solver_key"] == "discrete"
+
+
+def test_classifier_routes_graph_theory_to_discrete():
+    result = classify_problem("graph_theory: 一个图有多少顶点和边？")
+
+    assert result["domain"] == "discrete_math"
+    assert result["solver_key"] == "discrete"
+
+
+def test_classifier_unknown_falls_back_to_general():
+    result = classify_problem("这是一道没有明显领域关键词的题。")
+
+    assert result["domain"] == "unknown"
+    assert result["solver_key"] == "general"
+
+
 def test_build_solver_prompt_uses_selected_template():
     prompt = solver_agent.build_solver_prompt(
         "求 x^2 - 5x + 6 = 0 的根。",
@@ -33,6 +89,25 @@ def test_build_solver_prompt_uses_selected_template():
 
     assert "algebra solver" in prompt
     assert "最终答案" in prompt
+
+
+def test_build_solver_prompt_loads_new_templates():
+    for solver_key in (
+        "complex_analysis",
+        "geometry",
+        "linear_algebra",
+        "number_theory",
+        "optimization",
+    ):
+        prompt = solver_agent.build_solver_prompt(
+            "测试题。",
+            solver_key,
+            ["分析条件。"],
+            solver_key=solver_key,
+        )
+
+        assert f"{solver_key} solver" in prompt
+        assert "最终答案" in prompt
 
 
 def test_unknown_solver_key_falls_back_to_general_template():

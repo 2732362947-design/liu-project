@@ -12,6 +12,11 @@ VALID_SOLVER_KEYS = {
     "ode_pde",
     "proof",
     "discrete",
+    "complex_analysis",
+    "geometry",
+    "linear_algebra",
+    "number_theory",
+    "optimization",
     "general",
 }
 DOMAIN_TO_SOLVER_KEY = {
@@ -20,9 +25,16 @@ DOMAIN_TO_SOLVER_KEY = {
     "probability": "probability",
     "ode_pde": "ode_pde",
     "proof": "proof",
+    "complex_analysis": "complex_analysis",
+    "geometry": "geometry",
+    "linear_algebra": "linear_algebra",
+    "number_theory": "number_theory",
+    "optimization": "optimization",
     "real_analysis": "proof",
     "topology": "proof",
     "discrete_math": "discrete",
+    "combinatorics": "discrete",
+    "graph_theory": "discrete",
 }
 
 
