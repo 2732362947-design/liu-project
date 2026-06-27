@@ -11,3 +11,8 @@ outputs/*
 !outputs/.gitkeep
 outputs/*.json
 logs/*.jsonl
+
+# Generated external dataset samples
+data/omni_math_sample.json
+data/omni_math_*sample*.json
+outputs/omni_*coverage*.md
