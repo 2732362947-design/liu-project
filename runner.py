@@ -135,7 +135,16 @@ def _run_attempt(
     }
     final_answer = extraction.get("final_answer") if model_call_status == "success" else None
 
-    verification, step_log = _run_step("verify", verify_solution, problem, solution, final_answer)
+    verification, step_log = _run_step(
+        "verify",
+        verify_solution,
+        problem,
+        solution,
+        final_answer,
+        extraction.get("answer_type"),
+        domain,
+        solver_key,
+    )
     steps.append(step_log)
     verification = verification or {
         "status": "failed",
