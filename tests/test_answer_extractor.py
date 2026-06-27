@@ -36,3 +36,16 @@ def test_extract_uncertain_when_no_answer():
 
     assert result["status"] == "uncertain"
     assert result["final_answer"] is None
+
+
+def test_extract_proof_conclusion_skips_generic_ending():
+    result = extract_final_answer(
+        "证明：若数列 a_n 收敛于 a，则任一子列也收敛于 a。",
+        "根据收敛定义，对任意 epsilon 存在 N。故子列 {a_{n_k}} 收敛于 a。命题得证。",
+        "real_analysis",
+    )
+
+    assert result["status"] == "passed"
+    assert "子列" in result["final_answer"]
+    assert "收敛" in result["final_answer"]
+    assert result["final_answer"] != "命题得证"

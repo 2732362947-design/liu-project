@@ -1,4 +1,4 @@
-from agents.answer_normalizer import normalize_answer
+from agents.answer_normalizer import answers_match, normalize_answer
 
 
 def check_math_result(item: dict) -> dict:
@@ -13,27 +13,39 @@ def check_math_result(item: dict) -> dict:
     expected_answer = item.get("expected_answer")
     final_answer = item.get("final_answer")
     if expected_answer:
+        answer_type = item.get("expected_answer_type") or item.get("answer_type")
         normalized_final = normalize_answer(final_answer)
         normalized_expected = normalize_answer(expected_answer)
-        if not normalized_final:
+        if not normalized_final and answer_type != "proof":
             return {
                 "status": "unknown",
                 "uses_fallback": False,
                 "method": "reference_answer",
                 "reason": "final_answer is empty",
             }
-        if normalized_final == normalized_expected:
+        matched, reason = answers_match(
+            final_answer,
+            expected_answer,
+            answer_type=answer_type,
+            problem=item.get("problem"),
+            solution=item.get("solution"),
+        )
+        if matched:
             return {
                 "status": "passed",
                 "uses_fallback": False,
                 "method": "reference_answer",
-                "reason": "final_answer matches expected_answer",
+                "reason": reason,
+                "normalized_final": normalized_final,
+                "normalized_expected": normalized_expected,
             }
         return {
             "status": "failed",
             "uses_fallback": False,
             "method": "reference_answer",
-            "reason": "final_answer does not match expected_answer",
+            "reason": reason,
+            "normalized_final": normalized_final,
+            "normalized_expected": normalized_expected,
         }
 
     return {

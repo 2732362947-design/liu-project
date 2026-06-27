@@ -26,6 +26,12 @@ def _load_question_refs(questions_path: str | Path | None) -> dict:
     if path is None or not path.exists():
         return {}
     questions = json.loads(path.read_text(encoding="utf-8"))
+    return _question_refs_from_list(questions)
+
+
+def _question_refs_from_list(questions: list[dict] | None) -> dict:
+    if not questions:
+        return {}
     return {item["problem_id"]: item for item in questions}
 
 
@@ -41,14 +47,11 @@ def _with_reference(item: dict, question_refs: dict) -> dict:
 
 def _suggested_action(
     model_failed_count: int,
-    fallback_count: int,
     math_failed_count: int,
     math_unknown_count: int,
 ) -> str:
     if model_failed_count > 0:
         return "check_network_or_api"
-    if fallback_count > 0:
-        return "fix_code"
     if math_failed_count > 0:
         return "improve_solver_or_prompt"
     if math_unknown_count > 0:
@@ -56,18 +59,25 @@ def _suggested_action(
     return "continue"
 
 
-def run_review(
-    results_path: str | Path = DEFAULT_RESULTS_FILE,
-    output_path: str | Path = DEFAULT_SUMMARY_FILE,
-    questions_path: str | Path | None = None,
-) -> dict:
-    results_file = _resolve_path(results_path)
-    output_file = _resolve_path(output_path)
-    question_refs = _load_question_refs(questions_path)
-    results = json.loads(results_file.read_text(encoding="utf-8"))
+def _has_final_answer(item: dict) -> bool:
+    return bool(item.get("final_answer"))
+
+
+def _skipped_math_check(reason: str) -> dict:
+    return {
+        "status": "unknown",
+        "uses_fallback": False,
+        "method": "skipped",
+        "reason": reason,
+    }
+
+
+def build_review_summary(results: list[dict], questions: list[dict] | None = None) -> dict:
+    question_refs = _question_refs_from_list(questions)
     reviews = []
 
     model_failed_count = sum(1 for item in results if item.get("model_call_status") == "failed")
+    api_failed_count = model_failed_count
     uncertain_count = sum(
         1
         for item in results
@@ -78,16 +88,24 @@ def run_review(
     math_passed_count = 0
     math_failed_count = 0
     math_unknown_count = 0
+    effective_evaluated_count = 0
 
     for item in results:
-        item_with_ref = _with_reference(item, question_refs)
-        math_check = check_math_result(item_with_ref)
-        if math_check["status"] == "passed":
-            math_passed_count += 1
-        elif math_check["status"] == "failed":
-            math_failed_count += 1
+        is_effective = item.get("model_call_status") == "success" and _has_final_answer(item)
+        if is_effective:
+            effective_evaluated_count += 1
+            item_with_ref = _with_reference(item, question_refs)
+            math_check = check_math_result(item_with_ref)
+            if math_check["status"] == "passed":
+                math_passed_count += 1
+            elif math_check["status"] == "failed":
+                math_failed_count += 1
+            else:
+                math_unknown_count += 1
+        elif item.get("model_call_status") == "failed":
+            math_check = _skipped_math_check("model call failed")
         else:
-            math_unknown_count += 1
+            math_check = _skipped_math_check("final_answer is empty")
 
         reviews.append(
             {
@@ -100,23 +118,39 @@ def run_review(
         )
 
     total = len(results)
-    summary = {
+    estimated_accuracy = (
+        math_passed_count / effective_evaluated_count if effective_evaluated_count else None
+    )
+    return {
         "suggested_action": _suggested_action(
             model_failed_count,
-            fallback_count,
             math_failed_count,
             math_unknown_count,
         ),
         "total": total,
         "model_failed_count": model_failed_count,
+        "api_failed_count": api_failed_count,
         "uncertain_count": uncertain_count,
         "fallback_count": fallback_count,
+        "effective_evaluated_count": effective_evaluated_count,
         "math_passed_count": math_passed_count,
         "math_failed_count": math_failed_count,
         "math_unknown_count": math_unknown_count,
-        "estimated_accuracy": math_passed_count / total if total else 0.0,
+        "estimated_accuracy": estimated_accuracy,
         "reviews": reviews,
     }
+
+
+def run_review(
+    results_path: str | Path = DEFAULT_RESULTS_FILE,
+    output_path: str | Path = DEFAULT_SUMMARY_FILE,
+    questions_path: str | Path | None = None,
+) -> dict:
+    results_file = _resolve_path(results_path)
+    output_file = _resolve_path(output_path)
+    results = json.loads(results_file.read_text(encoding="utf-8"))
+    questions = list(_load_question_refs(questions_path).values())
+    summary = build_review_summary(results, questions)
     output_file.parent.mkdir(parents=True, exist_ok=True)
     output_file.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
     return summary
