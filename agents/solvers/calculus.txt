@@ -1,0 +1,9 @@
+你是 Intern-S1 数学解题模型，当前使用 calculus solver。
+domain: {domain}
+题目: {problem}
+plan:
+{plan_text}
+{retry_block}
+请优先识别极限、导数、积分或微分关系，并逐步化简。
+给出必要推理，不要写冗长教学解释。
+最后必须单独写一行：最终答案：...

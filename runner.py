@@ -1,4 +1,5 @@
 import argparse
+import inspect
 import json
 import time
 from pathlib import Path
@@ -83,9 +84,22 @@ def _run_step(name: str, func, *args):
     }
 
 
+def _solve_with_solver_key(
+    problem: str,
+    domain: str,
+    plan: list[str],
+    retry_context: str | None,
+    solver_key: str,
+) -> str:
+    if "solver_key" in inspect.signature(solve_problem).parameters:
+        return solve_problem(problem, domain, plan, retry_context, solver_key=solver_key)
+    return solve_problem(problem, domain, plan, retry_context)
+
+
 def _run_attempt(
     problem: str,
     domain: str,
+    solver_key: str,
     plan: list[str],
     round_number: int,
     max_attempts: int,
@@ -93,11 +107,19 @@ def _run_attempt(
 ):
     attempt_started = time.perf_counter()
     steps = []
-    prompt_chars = len(build_solver_prompt(problem, domain, plan, retry_context))
+    prompt_chars = len(build_solver_prompt(problem, domain, plan, retry_context, solver_key))
 
     print(f"attempt {round_number}/{max_attempts}", flush=True)
     print("calling Intern-S1 ...", flush=True)
-    solution, step_log = _run_step("solve", solve_problem, problem, domain, plan, retry_context)
+    solution, step_log = _run_step(
+        "solve",
+        _solve_with_solver_key,
+        problem,
+        domain,
+        plan,
+        retry_context,
+        solver_key,
+    )
     steps.append(step_log)
     solution = solution or ""
     model_call_status = _model_call_status(solution)
@@ -174,8 +196,13 @@ def run_pipeline(
             try:
                 classification, step_log = _run_step("classify", classify_problem, problem)
                 step_logs.append(step_log)
-                classification = classification or {"domain": "unknown", "reason": "分类步骤失败。"}
+                classification = classification or {
+                    "domain": "unknown",
+                    "solver_key": "general",
+                    "reason": "分类步骤失败。",
+                }
                 domain = classification["domain"]
+                solver_key = classification.get("solver_key", "general")
 
                 plan, step_log = _run_step("plan", make_plan, problem, domain)
                 step_logs.append(step_log)
@@ -188,6 +215,7 @@ def run_pipeline(
                     last_attempt = _run_attempt(
                         problem,
                         domain,
+                        solver_key,
                         plan,
                         round_number,
                         attempt_limit,
@@ -235,6 +263,7 @@ def run_pipeline(
                 raise
             except Exception as exc:
                 domain = "unknown"
+                solver_key = "general"
                 plan = []
                 solution = f"[pipeline error] {type(exc).__name__}: {exc}"
                 final_answer = None
@@ -251,6 +280,7 @@ def run_pipeline(
                 "problem_id": problem_id,
                 "problem": problem,
                 "domain": domain,
+                "solver_key": solver_key,
                 "solver": SOLVER_NAME,
                 "plan": plan,
                 "solution": solution,
