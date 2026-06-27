@@ -1,8 +1,6 @@
 from functools import lru_cache
 from pathlib import Path
 
-from intern_s1_client import call_intern_s1
-
 
 SOLVER_TEMPLATE_DIR = Path(__file__).resolve().parent / "solvers"
 VALID_SOLVER_KEYS = {
@@ -50,6 +48,12 @@ def normalize_solver_key(solver_key: str | None, domain: str | None = None) -> s
 def load_solver_template(solver_key: str) -> str:
     key = normalize_solver_key(solver_key)
     return (SOLVER_TEMPLATE_DIR / f"{key}.txt").read_text(encoding="utf-8")
+
+
+def call_intern_s1(prompt: str) -> str:
+    from intern_s1_client import call_intern_s1 as _call_intern_s1
+
+    return _call_intern_s1(prompt)
 
 
 def build_solver_prompt(
