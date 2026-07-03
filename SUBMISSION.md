@@ -108,6 +108,7 @@ pip install -r requirements.txt
 ```text
 dev_tools/check_submission_ready.py：提交前自检
 dev_tools/run_user_agent_local.py：模拟官方平台调用 user_agent.py
+dev_tools/run_user_agent_real_smoke.py：用于本地手动验证 user_agent.py 在真实 Intern-S API client 下能跑通；不是官方入口，不用于批量评测
 dev_tools/convert_omni_math.py：Omni-MATH 本地样本转换
 dev_tools/check_domain_coverage.py：领域覆盖检查
 ```

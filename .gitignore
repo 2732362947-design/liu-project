@@ -23,3 +23,7 @@ outputs_user_agent/
 # Generated Omni-MATH local smoke files
 data/omni_user_agent_smoke.jsonl
 outputs_user_agent_omni/
+
+# Real API local smoke outputs
+outputs/real_user_agent_smoke.json
+outputs/real_*smoke*.json
