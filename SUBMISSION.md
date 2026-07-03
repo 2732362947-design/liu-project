@@ -42,6 +42,7 @@ Classifier
 -> Official Client LLM Call
 -> Answer Extractor
 -> Local Verifier
+-> Retry Correction when needed
 -> Final Response
 ```
 
@@ -51,7 +52,10 @@ Classifier
 - Official Client LLM Call：通过平台传入 client 调用 Intern-S 系列模型。
 - Answer Extractor：提取最终答案。
 - Local Verifier：检查答案非空、格式、基本数学类型约束等。
+- Retry Correction when needed：当本地验证器发现答案为空、格式异常或验证不通过时，系统最多进行一次修正调用。
 - Final Response：返回官方要求的 `final_response`。
+
+retry 使用原题、第一次解答和本地验证反馈构造 correction prompt，不使用标准答案或隐藏评测信息。
 
 ## 4. 本地提交前自检
 
