@@ -24,6 +24,23 @@ def test_extract_probability():
     assert result["final_answer"] in {"3/5", "0.6"} or "3/5" in result["final_answer"]
 
 
+def test_extract_expression_answer_types():
+    for answer in ("x+1", "a+b", r"\frac{x}{2}", "sqrt(x+1)", "2x+3"):
+        result = extract_final_answer("求表达式。", f"推理过程。\n最终答案：{answer}", "algebra")
+
+        assert result["status"] == "passed"
+        assert result["final_answer"] == answer
+        assert result["answer_type"] == "expression"
+
+
+def test_extract_plain_number_answer_type():
+    result = extract_final_answer("求数值。", "推理过程。\n最终答案：2", "algebra")
+
+    assert result["status"] == "passed"
+    assert result["final_answer"] == "2"
+    assert result["answer_type"] == "number"
+
+
 def test_extract_error_failed():
     result = extract_final_answer("任意题", "[intern-s1 error] timeout", "unknown")
 

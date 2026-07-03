@@ -72,6 +72,16 @@ def test_classifier_routes_graph_theory_to_discrete():
     assert result["solver_key"] == "discrete"
 
 
+def test_classifier_routes_extremal_subset_divisibility_to_discrete():
+    result = classify_problem(
+        "Find the smallest positive integer K such that every K-element subset of "
+        "{1,2,...,50} contains two distinct elements a,b such that a+b divides ab."
+    )
+
+    assert result["domain"] == "combinatorics"
+    assert result["solver_key"] == "discrete"
+
+
 def test_classifier_unknown_falls_back_to_general():
     result = classify_problem("这是一道没有明显领域关键词的题。")
 
@@ -119,6 +129,20 @@ def test_unknown_solver_key_falls_back_to_general_template():
     )
 
     assert "general solver" in prompt
+
+
+def test_discrete_template_mentions_extremal_graph_modeling():
+    template = solver_agent.load_solver_template("discrete")
+
+    assert "independent set" in template or "独立集" in template
+    assert "K = alpha" in template or "K = α" in template
+    assert "a+b" in template
+    assert "ab" in template
+    assert "gcd" in template
+    assert "先给结论" in template or "最终答案：26" in template
+    assert "不要完整列出所有边" in template or "邻接表" in template
+    assert "<答案>" not in template
+    assert "<单个整数" not in template
 
 
 def test_solve_problem_calls_intern_s1_with_routed_prompt(monkeypatch):

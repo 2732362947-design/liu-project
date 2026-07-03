@@ -20,6 +20,11 @@ def _answer_type(answer: str, domain: str) -> str:
         return "unknown"
     if domain == "probability" or re.fullmatch(r"-?\d+(?:\.\d+)?|-?\d+\s*/\s*-?\d+", answer):
         return "number"
+    compact = answer.replace(" ", "")
+    if re.search(r"\\(?:frac|sqrt|sin|cos|tan|log|ln)\b", compact):
+        return "expression"
+    if re.search(r"[a-zA-Z][+\-*/^_][a-zA-Z0-9\\]", compact) or re.search(r"\d+[a-zA-Z]", compact):
+        return "set" if "," in answer or "，" in answer else "expression"
     if "x" in answer or "=" in answer:
         return "set" if "," in answer or "，" in answer else "expression"
     if domain in {"topology", "real_analysis", "proof"}:

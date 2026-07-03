@@ -5,7 +5,7 @@ def test_verify_number_solution_with_equation_check_passes():
     result = verify_solution(
         "解方程 2x+5=17",
         "移项得 2x=12，所以 x=6。代回验证：2*6+5=17，成立。",
-        "x=6",
+        "6",
         answer_type="number",
         domain="algebra",
         solver_key="algebra",
@@ -104,3 +104,71 @@ def test_verify_proof_generic_final_answer_is_not_failed():
     assert result["status"] != "failed"
     assert result["severity"] == "low"
     assert any(issue["code"] == "generic_final_answer" for issue in result["issues"])
+
+
+def test_verify_punctuation_fragment_final_answer_fails():
+    result = verify_solution("求答案", "最终答案：\".", "\".", answer_type="text")
+
+    assert result["status"] == "failed"
+    assert result["severity"] == "high"
+    assert any(issue["code"] == "final_answer_not_meaningful" for issue in result["issues"])
+
+
+def test_verify_digit_final_answer_is_meaningful():
+    result = verify_solution("1+1=?", "1+1=2，所以答案为 2。", "2", answer_type="number")
+
+    assert result["status"] == "passed"
+
+
+def test_verify_number_answer_type_rejects_equation_list():
+    result = verify_solution("求一个数", "最终答案：x = 2, x = 3", "x = 2, x = 3", answer_type="number")
+
+    assert result["status"] == "failed"
+    assert result["severity"] == "high"
+    assert any(issue["code"] == "answer_type_mismatch" for issue in result["issues"])
+
+
+def test_verify_number_answer_type_accepts_scalar_number():
+    result = verify_solution("求一个数", "最终答案：26", "26", answer_type="number")
+
+    assert result["status"] == "passed"
+
+
+def test_verify_number_answer_type_rejects_placeholder_high_severity():
+    result = verify_solution(
+        "求一个数",
+        '最终答案：<答案>", then concise reasoning.',
+        '<答案>", then concise reasoning.',
+        answer_type="number",
+    )
+
+    assert result["status"] == "failed"
+    assert result["severity"] == "high"
+    assert any(issue["code"] in {"final_answer_not_meaningful", "number_without_digits"} for issue in result["issues"])
+
+
+def test_verify_number_answer_type_accepts_latex_fraction():
+    result = verify_solution("求概率", r"最终答案：\frac{1}{2}", r"\frac{1}{2}", answer_type="number")
+
+    assert result["status"] == "passed"
+
+
+def test_verify_expression_rejects_bare_number():
+    result = verify_solution("求表达式", "最终答案：2", "2", answer_type="expression")
+
+    assert result["status"] != "passed"
+    assert any(issue["code"] == "expression_without_math_markers" for issue in result["issues"])
+
+
+def test_verify_expression_accepts_non_placeholder_expression():
+    result = verify_solution("求表达式", "最终答案：x+1", "x+1", answer_type="expression")
+
+    assert result["status"] == "passed"
+    assert not any(issue["code"] == "answer_type_mismatch" for issue in result["issues"])
+
+
+def test_verify_expression_rejects_unknown_placeholder_text():
+    result = verify_solution("求表达式", "最终答案：N/A", "N/A", answer_type="expression")
+
+    assert result["status"] == "failed"
+    assert any(issue["code"] == "final_answer_not_meaningful" for issue in result["issues"])

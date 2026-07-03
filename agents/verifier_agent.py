@@ -10,9 +10,61 @@ ERROR_MARKERS = (
 )
 GENERIC_PROOF_FINALS = {"命题得证", "得证", "证毕", "证明完毕"}
 PROOF_MARKERS = ("因为", "所以", "故", "任取", "存在", "对于", "证明", "得证", "收敛", "推出")
-EXPRESSION_MARKERS = ("=", "^", "frac", "sqrt", "sin", "cos", "e", "x", "y", "u", "->", "neg", "\\")
+EXPRESSION_MARKERS = (
+    "=",
+    "^",
+    "+",
+    "-",
+    "*",
+    "/",
+    "frac",
+    "sqrt",
+    "sin",
+    "cos",
+    "e",
+    "x",
+    "y",
+    "u",
+    "a",
+    "b",
+    "->",
+    "neg",
+    "\\",
+)
 COUNT_PROBLEM_MARKERS = ("多少种", "选法", "组合", "排列")
 EQUATION_PROBLEM_MARKERS = ("方程", "equation", "solve")
+FALLBACK_RESPONSE = "未能得到可靠答案"
+INVALID_FINAL_ANSWERS = {
+    ".",
+    ",",
+    "。",
+    "?",
+    "!",
+    "'",
+    '"',
+    '".',
+    "'.",
+    "''",
+    '""',
+    "`",
+    "``",
+    "n/a",
+    "unknown",
+}
+PLACEHOLDER_PHRASES = (
+    "<答案>",
+    "答案",
+    "<answer>",
+    "<result>",
+    "<final_answer>",
+    "<单个整数>",
+    "<单个数值或数值表达式>",
+    "then concise reasoning",
+    "具体整数",
+    "实际答案",
+    "待求答案",
+    "placeholder",
+)
 
 
 def _compact(text: str | None) -> str:
@@ -28,9 +80,60 @@ def _has_error_marker(*values: str | None) -> bool:
     return any(marker in joined for marker in ERROR_MARKERS)
 
 
+def _is_meaningful_final_answer(answer: str | None) -> bool:
+    if answer is None:
+        return False
+    text = _compact(answer)
+    if not text or text == FALLBACK_RESPONSE:
+        return False
+    compact = re.sub(r"\s+", "", text)
+    compact_lower = compact.lower()
+    text_lower = text.lower()
+    if compact_lower in INVALID_FINAL_ANSWERS:
+        return False
+    if "then concise reasoning" in text_lower or "thenconcisereasoning" in compact_lower:
+        return False
+    if any(phrase.lower() in compact_lower for phrase in PLACEHOLDER_PHRASES if phrase != "答案"):
+        return False
+    if "<" in compact and ">" in compact and any(token in compact_lower for token in ("答案", "answer", "result", "final")):
+        return False
+    has_digit_or_latex_or_variable = bool(re.search(r"[0-9A-Za-z\\=^]", compact))
+    if "答案" in compact and not has_digit_or_latex_or_variable:
+        return False
+    latex_shell = compact_lower.strip("$")
+    latex_shell = latex_shell.replace(r"\(", "").replace(r"\)", "")
+    latex_shell = latex_shell.replace(r"\[", "").replace(r"\]", "")
+    if latex_shell in {"", "{}", r"\text{}", r"\mathrm{}"}:
+        return False
+    if re.fullmatch(r"[\W_]+", compact, flags=re.UNICODE):
+        return False
+    if re.search(r"[0-9A-Za-z\u4e00-\u9fff]", compact):
+        return True
+    if re.search(r"\\[A-Za-z]+", compact):
+        return True
+    return len(compact) > 2
+
+
 def _extract_number(text: str | None) -> float | None:
     match = re.search(r"-?\d+(?:\.\d+)?", _compact(text))
     return float(match.group(0)) if match else None
+
+
+def _number_tokens(text: str | None) -> list[str]:
+    return re.findall(r"-?\d+(?:\.\d+)?(?:\s*/\s*-?\d+)?", _compact(text))
+
+
+def _is_single_number_answer(text: str | None) -> bool:
+    normalized = _compact(text).replace(" ", "")
+    if not normalized:
+        return False
+    if re.fullmatch(r"-?\d+(?:\.\d+)?(?:/-?\d+(?:\.\d+)?)?", normalized):
+        return True
+    if re.fullmatch(r"\\frac\{-?\d+\}\{-?\d+\}", normalized):
+        return True
+    if re.fullmatch(r"(答案是|答案为|结果是|结果为)?-?\d+(?:\.\d+)?(?:种(?:选法|方法)?|个(?:解)?|次)?", normalized):
+        return True
+    return False
 
 
 def _is_nonnegative_integer(text: str | None) -> bool:
@@ -91,14 +194,34 @@ def verify_solution(
         checks["has_final_answer"] = False
         checks["final_answer_supported"] = False
         _add_issue(issues, "empty_final_answer", "high", "final_answer is empty")
+    elif not _is_meaningful_final_answer(final_text):
+        checks["final_answer_supported"] = False
+        checks["answer_type_valid"] = False
+        _add_issue(
+            issues,
+            "final_answer_not_meaningful",
+            "high",
+            "final_answer is punctuation or not a meaningful math answer",
+        )
 
     if _has_error_marker(solution_text, final_text):
         checks["final_answer_supported"] = False
         _add_issue(issues, "error_diagnostic", "high", "solution or final_answer contains an error diagnostic")
 
-    if kind == "number" and final_text and _extract_number(final_text) is None:
-        checks["answer_type_valid"] = False
-        _add_issue(issues, "number_without_digits", "medium", "number final_answer has no parseable number")
+    if kind == "number" and final_text:
+        if _extract_number(final_text) is None:
+            checks["answer_type_valid"] = False
+            checks["final_answer_supported"] = False
+            _add_issue(issues, "number_without_digits", "high", "number final_answer has no parseable number")
+        elif not _is_single_number_answer(final_text):
+            checks["answer_type_valid"] = False
+            checks["final_answer_supported"] = False
+            _add_issue(
+                issues,
+                "answer_type_mismatch",
+                "high",
+                "number answer_type requires a single scalar numeric answer",
+            )
 
     if kind == "expression" and final_text:
         normalized_final = _normalized_compact(final_text)

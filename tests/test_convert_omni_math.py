@@ -34,6 +34,19 @@ def test_simplify_round_table_transfer_cards_as_combinatorics_or_optimization():
     assert simplify_domain(["Mathematics -> Other"], problem) in {"combinatorics", "optimization"}
 
 
+def test_simplify_extremal_subset_divisibility_not_optimization():
+    problem = (
+        "Find the smallest positive integer K such that every K-element subset of "
+        "{1,2,...,50} contains two distinct elements a,b such that a+b divides ab."
+    )
+
+    assert simplify_domain(["Mathematics -> Optimization"], problem) in {
+        "combinatorics",
+        "number_theory",
+        "graph_theory",
+    }
+
+
 def test_simplify_phone_digit_counting_as_combinatorics():
     problem = "How many phone numbers can be formed from these digits?"
 

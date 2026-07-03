@@ -34,6 +34,8 @@ INVALID_FINAL_ANSWERS = {
     '""',
     "`",
     "``",
+    "n/a",
+    "unknown",
 }
 PLACEHOLDER_PHRASES = (
     "<答案>",
@@ -218,6 +220,12 @@ def _build_prompt_constraints(problem: str, solver_key: str, expected_answer_typ
             "不要输出尖括号、占位符或“答案”二字作为答案内容。"
             "然后再给简洁推理。如果推理较长，也必须先给最终答案，避免最终答案因截断丢失。"
         )
+    if str(expected_answer_type or "").lower() == "expression":
+        constraints.append(
+            "最终答案必须是表达式，不要用单个数字作为占位答案；"
+            "除非题目中的表达式确实化简为常数，否则不要只回答裸数字。"
+            "适用时请使用题目中的变量。"
+        )
     if solver_key == "discrete" and _problem_suggests_extremal_discrete(problem):
         constraints.append(
             "针对该组合极值 / 图建模题：不要完整枚举所有边或邻接表；"
@@ -344,6 +352,12 @@ def _build_correction_prompt(
             "9. 如果题目问 smallest/minimum/number/integer，最终答案应为单个整数或数值表达式。\n"
             "10. 先输出一行，例如“最终答案：26”，再用不超过 1200 字说明关键证明；"
             "26 只是格式示例，实际答案必须替换为本题计算结果，不要输出尖括号或占位符。"
+        )
+    if str(expected_answer_type or "").lower() == "expression":
+        answer_type_instruction += (
+            "\n6. 上一次答案类型不符合要求：本题需要 expression 类型最终答案。\n"
+            "7. 不要再次返回纯数字或占位数字；除非表达式确实化简为常数，否则最终答案必须包含变量、运算符或函数形式。\n"
+            "8. 适用时请使用题目中的变量，并输出清晰的表达式。"
         )
     if _problem_suggests_extremal_discrete(problem):
         answer_type_instruction += (

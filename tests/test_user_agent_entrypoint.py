@@ -392,6 +392,20 @@ def test_number_prompt_requires_final_answer_first():
     assert "<单个数值" not in prompt
 
 
+def test_expression_prompt_requires_expression_not_bare_number():
+    client = FakeClient("最终答案：x+1")
+
+    ReasoningAgent(client).solve(
+        "Find an expression for the length.",
+        {"answer_type": "expression", "domain": "geometry", "solver_key": "geometry"},
+    )
+
+    prompt = client.calls[0]["messages"][0]["content"]
+    assert "最终答案必须是表达式" in prompt
+    assert "不要用单个数字作为占位答案" in prompt
+    assert "适用时请使用题目中的变量" in prompt
+
+
 def test_discrete_extremal_prompt_forbids_full_edge_enumeration():
     client = FakeClient("最终答案：26")
     prompt_only_problem = (
@@ -480,6 +494,28 @@ def test_correction_prompt_compresses_long_first_solution():
     assert "<单个数值" not in prompt
 
 
+def test_expression_correction_prompt_mentions_type_mismatch():
+    prompt = _build_correction_prompt(
+        "Find an expression for the length.",
+        {"answer_type": "expression"},
+        "推理过程。\n最终答案：2",
+        "2",
+        {
+            "status": "uncertain",
+            "severity": "medium",
+            "issues": [{"code": "expression_without_math_markers"}],
+            "suggestion": "retry",
+        },
+        solver_key="geometry",
+        domain="geometry",
+        expected_answer_type="expression",
+    )
+
+    assert "需要 expression 类型" in prompt
+    assert "不要再次返回纯数字" in prompt
+    assert "使用题目中的变量" in prompt
+
+
 def test_correction_prompt_for_extremal_subset_says_do_not_continue_listing_edges():
     prompt = _build_correction_prompt(
         EXTREMAL_SUBSET_PROBLEM,
@@ -505,3 +541,21 @@ def test_trace_redacts_sensitive_model_output_and_is_json_serializable():
     assert "Bearer" not in serialized
     assert "api_key" not in serialized
     assert "token" not in serialized
+
+
+def test_solve_with_metadata_none_returns_nonempty_response():
+    result = ReasoningAgent(FakeClient("最终答案：2")).solve("1+1=?", None)
+
+    assert isinstance(result, dict)
+    assert result["final_response"]
+    assert isinstance(result["trace"], list)
+    json.dumps(result, ensure_ascii=False)
+
+
+def test_solve_with_empty_string_chat_response_returns_nonempty_response():
+    result = ReasoningAgent(FakeClient("")).solve("1+1=?", {})
+
+    assert isinstance(result, dict)
+    assert result["final_response"]
+    assert isinstance(result["trace"], list)
+    json.dumps(result, ensure_ascii=False)

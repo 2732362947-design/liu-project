@@ -29,7 +29,47 @@ DOMAIN_RULES = (
     ("algebra", ("Algebra",)),
 )
 OTHER_DOMAIN_MARKERS = ("other", "misc", "unknown", "uncategorized")
+EXTREMAL_SET_MARKERS = (
+    "k-element subset",
+    "every k-element subset",
+    "subset",
+)
+EXTREMAL_DISCRETE_MARKERS = (
+    "contains two distinct elements",
+    "two distinct elements",
+    "pair of elements",
+    "divides",
+    "integer",
+    "positive integer",
+    "{1,2,...",
+    "{1, 2, ...",
+    "extremal",
+    "independent set",
+    "choose",
+)
+OPTIMIZATION_STRONG_MARKERS = (
+    "linear programming",
+    "objective function",
+    "minimize cost",
+    "maximize profit",
+    "maximize function",
+    "minimize function",
+    "operations research",
+    "feasible region",
+    "constraints",
+    "subject to",
+)
 PROBLEM_DOMAIN_RULES = (
+    (
+        "graph_theory",
+        (
+            "independent set",
+            "graph model",
+            "vertices",
+            "vertex",
+            "edges",
+        ),
+    ),
     (
         "graph_theory",
         (
@@ -45,6 +85,11 @@ PROBLEM_DOMAIN_RULES = (
         "combinatorics",
         (
             "combinatorics",
+            "subset",
+            "k-element subset",
+            "every k-element subset",
+            "contains two distinct elements",
+            "pair of elements",
             "round table",
             "transfer",
             "adjacent",
@@ -123,15 +168,15 @@ PROBLEM_DOMAIN_RULES = (
     (
         "optimization",
         (
-            "smallest",
-            "minimum",
-            "maximum",
-            "least",
             "optimize",
-            "no more than",
             "cost",
             "linear programming",
             "constraints",
+            "objective function",
+            "feasible region",
+            "subject to",
+            "minimize cost",
+            "maximize function",
             "how many seconds",
             "takes",
             "cannot begin",
@@ -176,8 +221,24 @@ def _domain_from_text(text: str) -> str:
     return "unknown"
 
 
+def _domain_from_extremal_set_context(problem: Any, raw_domain: Any = "") -> str:
+    combined = f"{raw_domain or ''} {problem or ''}".lower()
+    has_subset = any(marker in combined for marker in EXTREMAL_SET_MARKERS)
+    has_discrete_structure = any(marker in combined for marker in EXTREMAL_DISCRETE_MARKERS)
+    if has_subset and has_discrete_structure:
+        return "combinatorics"
+    if "graph" in combined and any(marker in combined for marker in ("independent set", "coloring", "tournament")):
+        return "graph_theory"
+    if "divides" in combined and any(marker in combined for marker in ("integer", "positive integer", "pair")):
+        return "number_theory"
+    return "unknown"
+
+
 def _domain_from_problem(problem: Any) -> str:
     normalized = str(problem or "").lower()
+    extremal_domain = _domain_from_extremal_set_context(normalized)
+    if extremal_domain != "unknown":
+        return extremal_domain
     for domain, keywords in PROBLEM_DOMAIN_RULES:
         if any(keyword in normalized for keyword in keywords):
             return domain
@@ -187,6 +248,9 @@ def _domain_from_problem(problem: Any) -> str:
 def simplify_domain(domain_value: Any, problem: Any = "") -> str:
     raw_domain = raw_domain_text(domain_value)
     raw_normalized = raw_domain.lower()
+    extremal_domain = _domain_from_extremal_set_context(problem, raw_domain)
+    if extremal_domain != "unknown":
+        return extremal_domain
     domain = _domain_from_text(raw_domain)
     if domain != "unknown" and not any(marker in raw_normalized for marker in OTHER_DOMAIN_MARKERS):
         return domain

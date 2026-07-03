@@ -19,6 +19,16 @@ DEFAULT_MODEL = "intern-latest"
 DEFAULT_PROBLEM = "1+1=?"
 DEFAULT_IDX = "real_smoke_001"
 SENSITIVE_MARKERS = ("Authorization", "Bearer", "api_key", "token")
+METADATA_ALLOWLIST = {
+    "idx",
+    "domain",
+    "difficulty",
+    "source",
+    "answer_type",
+    "raw_domain",
+    "solver_key",
+}
+METADATA_DENYLIST = {"answer", "expected_answer", "gold_answer", "reference_answer", "solution"}
 
 
 def _resolve_path(path: str | Path) -> Path:
@@ -94,12 +104,41 @@ class RealInternClient:
             raise RuntimeError(f"client failed: {safe_text(exc)}") from exc
 
 
-def run_smoke(client, problem: str = DEFAULT_PROBLEM, idx: str = DEFAULT_IDX) -> dict:
+def _safe_metadata_from_item(item: dict, idx: str) -> dict:
+    metadata = {"idx": idx}
+    for key in METADATA_ALLOWLIST:
+        if key == "idx":
+            continue
+        if key in item and key.lower() not in METADATA_DENYLIST:
+            metadata[key] = item[key]
+    return metadata
+
+
+def _load_input_item(input_json: str | Path, item_index: int) -> tuple[str, str, dict]:
+    input_path = _resolve_path(input_json)
+    items = json.loads(input_path.read_text(encoding="utf-8"))
+    if not isinstance(items, list):
+        raise ValueError("--input-json must contain a JSON array")
+    if item_index < 0 or item_index >= len(items):
+        raise IndexError(f"--item-index {item_index} is out of range for {len(items)} items")
+    item = items[item_index]
+    if not isinstance(item, dict):
+        raise ValueError("selected input item must be a JSON object")
+    problem = str(item.get("problem") or "")
+    if not problem:
+        raise ValueError("selected input item has empty problem")
+    idx = str(item.get("problem_id") or item.get("idx") or DEFAULT_IDX)
+    metadata = _safe_metadata_from_item(item, idx)
+    return problem, idx, metadata
+
+
+def run_smoke(client, problem: str = DEFAULT_PROBLEM, idx: str = DEFAULT_IDX, metadata: dict | None = None) -> dict:
     from user_agent import ReasoningAgent
 
     started = time.perf_counter()
     agent = ReasoningAgent(client=client)
-    result = agent.solve(problem, {"idx": idx})
+    solve_metadata = metadata if isinstance(metadata, dict) else {"idx": idx}
+    result = agent.solve(problem, solve_metadata)
     trace = result.get("trace", []) if isinstance(result, dict) else []
     retry_used = any(item.get("step") == "retry_model_call" for item in trace if isinstance(item, dict))
     return {
@@ -142,6 +181,8 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run a one-question user_agent.py smoke test with a real Intern-S API client.")
     parser.add_argument("--problem", default=DEFAULT_PROBLEM)
     parser.add_argument("--idx", default=DEFAULT_IDX)
+    parser.add_argument("--input-json", default=None, help="Optional JSON array file containing converted question items.")
+    parser.add_argument("--item-index", type=int, default=0, help="Question index to use with --input-json.")
     parser.add_argument("--timeout", type=float, default=120)
     parser.add_argument("--output", default=None)
     return parser.parse_args()
@@ -150,8 +191,13 @@ def _parse_args() -> argparse.Namespace:
 def main() -> None:
     args = _parse_args()
     try:
+        problem = args.problem
+        idx = args.idx
+        metadata = {"idx": idx}
+        if args.input_json:
+            problem, idx, metadata = _load_input_item(args.input_json, args.item_index)
         client = _build_client_from_env(args.timeout)
-        result = run_smoke(client, problem=args.problem, idx=args.idx)
+        result = run_smoke(client, problem=problem, idx=idx, metadata=metadata)
         print(f"final_response: {safe_text(result['final_response'])}")
         print(f"trace_steps: {[item.get('step') for item in result['trace'] if isinstance(item, dict)]}")
         print(f"retry_used: {result['retry_used']}")

@@ -1,9 +1,12 @@
 import json
+import inspect
 import subprocess
 import sys
 
+import user_agent
 from dev_tools.run_user_agent_local import (
     FakeClient,
+    build_metadata,
     load_jsonl,
     normalize_agent_response,
     run_one,
@@ -40,6 +43,160 @@ def test_run_one_success_with_reasoning_agent():
     assert result["status"] == "success"
     assert result["final_response"]
     assert isinstance(result["trace"], list)
+
+
+def _trace_content(result, step):
+    return next(item["content"] for item in result["trace"] if item["step"] == step)
+
+
+def test_build_metadata_prefers_nested_metadata():
+    item = {
+        "idx": "row-id",
+        "problem": "题目",
+        "expected_answer": "999",
+        "metadata": {
+            "idx": "nested-id",
+            "domain": "geometry",
+            "difficulty": 4.5,
+            "source": "china_team_selection_test",
+            "answer_type": "expression",
+            "raw_domain": "Mathematics -> Geometry",
+            "solver_key": "geometry",
+            "expected_answer": "secret",
+            "solution": "hidden",
+        },
+    }
+
+    metadata = build_metadata(item, 0)
+
+    assert metadata == {
+        "idx": "nested-id",
+        "domain": "geometry",
+        "difficulty": 4.5,
+        "source": "china_team_selection_test",
+        "answer_type": "expression",
+        "raw_domain": "Mathematics -> Geometry",
+        "solver_key": "geometry",
+    }
+
+
+def test_run_one_passes_nested_expression_metadata_to_agent():
+    agent = ReasoningAgent(FakeClient("最终答案：x=2"))
+    item = {
+        "idx": "omni_000002",
+        "problem": "Find x.",
+        "metadata": {
+            "idx": "omni_000002",
+            "domain": "geometry",
+            "answer_type": "expression",
+            "solver_key": "geometry",
+        },
+    }
+
+    result = run_one(agent, item, 0)
+
+    assert result["status"] == "success"
+    assert result["final_response"] == "x=2"
+    assert "domain=geometry" in _trace_content(result, "classify")
+    assert "expected_answer_type=expression" in _trace_content(result, "verify")
+
+
+def test_default_fake_client_returns_expression_for_expression_metadata():
+    agent = ReasoningAgent(FakeClient())
+    item = {
+        "idx": "expr",
+        "problem": "Find an expression.",
+        "metadata": {"domain": "geometry", "answer_type": "expression", "solver_key": "geometry"},
+    }
+
+    result = run_one(agent, item, 0)
+
+    assert result["status"] == "success"
+    assert result["final_response"] == "x+1"
+    assert result["final_response"] != "2"
+    assert "expected_answer_type=expression" in _trace_content(result, "verify")
+
+
+def test_run_one_passes_legacy_top_level_expression_metadata_to_agent():
+    agent = ReasoningAgent(FakeClient("最终答案：x=2"))
+    item = {
+        "idx": "omni_000002",
+        "problem": "Find x.",
+        "domain": "geometry",
+        "answer_type": "expression",
+        "solver_key": "geometry",
+    }
+
+    result = run_one(agent, item, 0)
+
+    assert result["status"] == "success"
+    assert result["final_response"] == "x=2"
+    assert "domain=geometry" in _trace_content(result, "classify")
+    assert "expected_answer_type=expression" in _trace_content(result, "verify")
+
+
+def test_run_one_passes_number_metadata_to_agent():
+    agent = ReasoningAgent(FakeClient("最终答案：2"))
+    item = {
+        "idx": "n1",
+        "problem": "1+1=?",
+        "metadata": {"answer_type": "number"},
+    }
+
+    result = run_one(agent, item, 0)
+
+    assert result["status"] == "success"
+    assert result["final_response"] == "2"
+    assert "expected_answer_type=number" in _trace_content(result, "verify")
+
+
+def test_default_fake_client_returns_number_for_number_metadata():
+    agent = ReasoningAgent(FakeClient())
+    item = {
+        "idx": "n1",
+        "problem": "1+1=?",
+        "metadata": {"answer_type": "number"},
+    }
+
+    result = run_one(agent, item, 0)
+
+    assert result["status"] == "success"
+    assert result["final_response"] == "2"
+    assert "expected_answer_type=number" in _trace_content(result, "verify")
+
+
+def test_local_fake_client_markers_do_not_enter_user_agent_entrypoint():
+    source = inspect.getsource(user_agent)
+
+    assert "class FakeClient" not in source
+    assert "DEFAULT_FAKE_ANSWER" not in source
+    assert "AUTO_FAKE_ANSWER" not in source
+    assert "最终答案：x+1" not in source
+
+
+def test_build_metadata_top_level_fallback_filters_answer_fields():
+    item = {
+        "idx": "row-1",
+        "problem": "1+1=?",
+        "expected_answer": "2",
+        "answer": "secret",
+        "solution": "hidden",
+        "domain": "algebra",
+        "difficulty": 3,
+        "source": "test",
+        "answer_type": "number",
+        "raw_domain": "Mathematics -> Algebra",
+        "solver_key": "algebra",
+    }
+
+    metadata = build_metadata(item, 0)
+
+    assert "expected_answer" not in metadata
+    assert "answer" not in metadata
+    assert "solution" not in metadata
+    assert metadata["idx"] == "row-1"
+    assert metadata["domain"] == "algebra"
+    assert metadata["answer_type"] == "number"
 
 
 def test_run_one_exception_returns_error():

@@ -54,11 +54,33 @@ def solver_key_for_domain(domain: str) -> str:
     return mapping.get(domain, "general")
 
 
+def _looks_like_extremal_discrete_problem(text: str) -> bool:
+    subset_markers = ("k-element subset", "every k-element subset", "subset")
+    structure_markers = (
+        "contains two distinct elements",
+        "two distinct elements",
+        "pair of elements",
+        "divides",
+        "positive integer",
+        "integer",
+        "{1,2,...",
+        "{1, 2, ...",
+        "independent set",
+        "coloring",
+        "tournament",
+        "choose",
+    )
+    return any(marker in text for marker in subset_markers) and any(marker in text for marker in structure_markers)
+
+
 def classify_problem(problem: str) -> dict:
     text = problem.lower()
     if any(token in text for token in ("probability", "概率", "随机", "骰子", "硬币", "红球", "蓝球")):
         domain = "probability"
         reason = "题目涉及随机试验或概率计算。"
+    elif _looks_like_extremal_discrete_problem(text):
+        domain = "combinatorics"
+        reason = "题目是极值集合、组合图论或离散结构问题。"
     elif any(token in text for token in ("pde", "ode", "热方程", "偏微分", "微分方程", "u_t", "u_xx")):
         domain = "ode_pde"
         reason = "题目涉及常微分方程或偏微分方程。"

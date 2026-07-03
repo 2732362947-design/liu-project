@@ -11,12 +11,40 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 DEFAULT_OUTPUT_DIR = ROOT / "outputs_user_agent"
 DEFAULT_FAKE_ANSWER = "最终答案：2"
+AUTO_FAKE_ANSWER = "__auto__"
+METADATA_ALLOWLIST = {
+    "idx",
+    "domain",
+    "difficulty",
+    "source",
+    "answer_type",
+    "raw_domain",
+    "solver_key",
+}
 
 
 class FakeClient:
-    def __init__(self, answer: str = DEFAULT_FAKE_ANSWER):
+    def __init__(self, answer: str = AUTO_FAKE_ANSWER):
         self.answer = answer
         self.calls = []
+        self.current_problem = ""
+        self.current_metadata = {}
+
+    def set_context(self, problem: str, metadata: dict) -> None:
+        self.current_problem = str(problem or "")
+        self.current_metadata = dict(metadata or {})
+
+    def _auto_answer(self, messages) -> str:
+        answer_type = str(self.current_metadata.get("answer_type") or "").lower()
+        prompt = "\n".join(str(message.get("content", "")) for message in messages if isinstance(message, dict))
+        prompt_lower = prompt.lower()
+        if answer_type == "expression" or "expected_answer_type=expression" in prompt_lower:
+            return "最终答案：x+1"
+        if answer_type == "number" or "expected_answer_type=number" in prompt_lower:
+            return DEFAULT_FAKE_ANSWER
+        if "geometry solver" in prompt_lower or "domain: geometry" in prompt_lower:
+            return "最终答案：x+1"
+        return DEFAULT_FAKE_ANSWER
 
     def chat(self, messages, temperature=0.2, max_tokens=4096):
         self.calls.append(
@@ -26,7 +54,9 @@ class FakeClient:
                 "max_tokens": max_tokens,
             }
         )
-        return self.answer
+        if self.answer != AUTO_FAKE_ANSWER:
+            return self.answer
+        return self._auto_answer(messages)
 
 
 def _resolve_path(path: str | Path) -> Path:
@@ -64,12 +94,30 @@ def normalize_agent_response(response: Any) -> dict:
     return {"final_response": str(response or ""), "trace": []}
 
 
+def build_metadata(item: dict, fallback_idx: int) -> dict:
+    if isinstance(item.get("metadata"), dict):
+        metadata = {
+            str(key): value
+            for key, value in item["metadata"].items()
+            if str(key) in METADATA_ALLOWLIST
+        }
+    else:
+        metadata = {
+            key: item[key]
+            for key in METADATA_ALLOWLIST
+            if key in item
+        }
+    metadata.setdefault("idx", item.get("idx", fallback_idx))
+    return metadata
+
+
 def run_one(agent, item: dict, idx: int) -> dict:
     started = time.perf_counter()
     try:
         problem = str(item.get("problem", ""))
-        metadata = dict(item)
-        metadata.setdefault("idx", idx)
+        metadata = build_metadata(item, idx)
+        if hasattr(agent, "client") and hasattr(agent.client, "set_context"):
+            agent.client.set_context(problem, metadata)
         response = normalize_agent_response(agent.solve(problem, metadata))
         final_response = response.get("final_response", "")
         return {
@@ -104,7 +152,7 @@ def run_local(
     output_dir: str | Path = DEFAULT_OUTPUT_DIR,
     limit: int | None = None,
     overwrite: bool = False,
-    fake_answer: str = DEFAULT_FAKE_ANSWER,
+    fake_answer: str = AUTO_FAKE_ANSWER,
 ) -> list[dict]:
     from user_agent import ReasoningAgent
 
@@ -135,7 +183,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR.relative_to(ROOT)))
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--overwrite", action="store_true")
-    parser.add_argument("--fake-answer", default=DEFAULT_FAKE_ANSWER)
+    parser.add_argument("--fake-answer", default=AUTO_FAKE_ANSWER)
     return parser.parse_args()
 
 
