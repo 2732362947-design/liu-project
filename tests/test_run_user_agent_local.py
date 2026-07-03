@@ -97,6 +97,9 @@ def test_cli_smoke_generates_output(tmp_path):
             str(output_dir),
         ],
         check=True,
+        timeout=10,
+        capture_output=True,
+        text=True,
     )
 
     result = json.loads((output_dir / "0.json").read_text(encoding="utf-8"))

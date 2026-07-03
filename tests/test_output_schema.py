@@ -5,13 +5,23 @@ import sys
 from runner import OUTPUT_FILE
 
 
+def _run_runner():
+    return subprocess.run(
+        [sys.executable, "runner.py"],
+        check=True,
+        timeout=10,
+        capture_output=True,
+        text=True,
+    )
+
+
 def test_output_schema_fields():
     if not OUTPUT_FILE.exists():
-        subprocess.run([sys.executable, "runner.py"], check=True)
+        _run_runner()
 
     results = json.loads(OUTPUT_FILE.read_text(encoding="utf-8"))
     if any("solver" not in item or "attempts" not in item for item in results):
-        subprocess.run([sys.executable, "runner.py"], check=True)
+        _run_runner()
         results = json.loads(OUTPUT_FILE.read_text(encoding="utf-8"))
 
     required_fields = {
