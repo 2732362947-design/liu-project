@@ -19,3 +19,7 @@ outputs/omni_*coverage*.md
 
 # Local official-style runner outputs
 outputs_user_agent/
+
+# Generated Omni-MATH local smoke files
+data/omni_user_agent_smoke.jsonl
+outputs_user_agent_omni/
