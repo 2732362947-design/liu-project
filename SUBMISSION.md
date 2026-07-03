@@ -36,7 +36,8 @@ result = agent.solve(problem, metadata)
 ## 3. 智能体流程
 
 ```text
-Classifier
+Local Exact Tools
+-> Classifier
 -> Planner
 -> Solver Router
 -> Official Client LLM Call
@@ -46,6 +47,7 @@ Classifier
 -> Final Response
 ```
 
+- Local Exact Tools：对可形式化的小规模组合图问题，优先使用本地精确工具求解。
 - Classifier：识别题目领域和 `solver_key`。
 - Planner：生成解题计划。
 - Solver Router：加载对应数学方向 prompt 模板。
@@ -56,6 +58,9 @@ Classifier
 - Final Response：返回官方要求的 `final_response`。
 
 retry 使用原题、第一次解答和本地验证反馈构造 correction prompt，不使用标准答案或隐藏评测信息。
+
+本地精确工具不访问网络，不使用标准答案，不读取隐藏数据；对不匹配的问题，系统仍走 LLM 推理流程。
+工具输出会记录可审计的图规模、边数、孤立点数量、最大独立集大小和一个独立集 witness；若外部样本参考答案与形式化计算冲突，系统以可复现工具计算为准。
 
 ## 4. 本地提交前自检
 

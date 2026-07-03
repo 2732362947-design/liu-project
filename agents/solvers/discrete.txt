@@ -5,5 +5,22 @@ plan:
 {plan_text}
 {retry_block}
 请优先识别组合计数、图论、逻辑命题或离散结构，并给出清晰结论。
+遇到 every K-element subset、K-element subset、contains two distinct elements、pair、subset of {{1,2,...,n}}、smallest K、maximum subset avoiding property、divides、coloring、tournament、graph、independent set 等关键词时，优先使用“组合极值 / 图建模”策略：
+1. 必须先给结论行，例如“最终答案：26”，再给证明；26 只是格式示例，实际作答时必须替换为本题计算得到的答案，不要输出占位符或“答案”二字作为答案内容。
+2. 对“任意 K 元子集必含某种二元组”的题，构造图 G，顶点为全集元素。
+3. 满足目标性质的二元组连边；不含目标二元组的子集就是独立集。
+4. 问最小 K 使任意 K 元子集含边，等价于 K = alpha(G) + 1，其中 alpha(G) 是最大独立集大小。
+5. 必须同时给出下界构造和上界证明：先构造一个大小 alpha 的无边子集，再证明任何 alpha+1 个元素必有边。
+6. 不要完整列出所有边或邻接表；只列关键边类型、结构分组、构造下界和覆盖上界。
+7. 如果边很多，必须压缩为参数族或分组证明，禁止把大部分输出花在机械枚举上。
+对 divisibility pair 条件，例如 a+b | ab：
+1. 不要只做随机枚举。
+2. 可令 d = gcd(a,b)，a = d x，b = d y，gcd(x,y)=1。
+3. 条件 a+b | ab 等价于 x+y | dxy。
+4. 因 gcd(x+y, xy)=1，所以 x+y | d。
+5. 因此可写 d = k(x+y)，得到 a = kx(x+y)，b = ky(x+y)。
+6. 用这个参数化列出 1..n 范围内可能的边类型或参数族，再分析最大独立集；不要逐条列完整邻接表。
+对 smallest positive integer K 这类题，最终答案应是单个整数 K，不要输出 x=2,x=3 这类变量解集或多个候选答案，不要输出标点残片。
+推理最后必须收束到 K = alpha + 1，并说明 alpha 的下界构造和上界证明。
 给出必要推理，不要写冗长教学解释。
-最后必须单独写一行：最终答案：...
+输出中必须包含明确模式“最终答案：”后接本题的实际结果，例如“最终答案：26”。不要输出占位符文本。

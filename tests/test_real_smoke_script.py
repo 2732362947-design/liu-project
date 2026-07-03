@@ -1,6 +1,9 @@
+import json
+
 import pytest
 
-from dev_tools.run_user_agent_real_smoke import RealInternClient, run_smoke
+from dev_tools import run_user_agent_real_smoke
+from dev_tools.run_user_agent_real_smoke import RealInternClient, _load_input_item, run_smoke
 
 
 class FakeResponse:
@@ -63,3 +66,75 @@ def test_run_smoke_with_fake_client_returns_result():
     assert result["idx"] == "unit"
     assert result["final_response"]
     assert isinstance(result["trace"], list)
+
+
+def test_load_input_json_builds_safe_metadata(tmp_path):
+    input_file = tmp_path / "items.json"
+    input_file.write_text(
+        json.dumps(
+            [
+                {
+                    "problem_id": "omni_000001",
+                    "problem": "Find the minimum.",
+                    "domain": "optimization",
+                    "difficulty": 5.0,
+                    "source": "omni",
+                    "answer_type": "number",
+                    "raw_domain": "Mathematics -> Optimization",
+                    "expected_answer": "26",
+                    "solution": "hidden solution",
+                }
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    problem, idx, metadata = _load_input_item(input_file, 0)
+
+    assert problem == "Find the minimum."
+    assert idx == "omni_000001"
+    assert metadata["idx"] == "omni_000001"
+    assert metadata["domain"] == "optimization"
+    assert metadata["difficulty"] == 5.0
+    assert metadata["source"] == "omni"
+    assert metadata["answer_type"] == "number"
+    assert metadata["raw_domain"] == "Mathematics -> Optimization"
+    assert "expected_answer" not in metadata
+    assert "solution" not in metadata
+
+
+def test_run_smoke_passes_safe_input_metadata(monkeypatch):
+    captured = {}
+
+    class RecordingAgent:
+        def __init__(self, client):
+            self.client = client
+
+        def solve(self, problem, metadata):
+            captured["problem"] = problem
+            captured["metadata"] = metadata
+            return {"final_response": "26", "trace": [{"step": "classify", "content": "domain=optimization"}]}
+
+    monkeypatch.setattr("user_agent.ReasoningAgent", RecordingAgent)
+
+    result = run_user_agent_real_smoke.run_smoke(
+        FakeOfficialClient(),
+        problem="Find the minimum.",
+        idx="omni_000001",
+        metadata={
+            "idx": "omni_000001",
+            "domain": "optimization",
+            "difficulty": 5.0,
+            "source": "omni",
+            "answer_type": "number",
+        },
+    )
+
+    assert result["final_response"] == "26"
+    assert captured["metadata"]["domain"] == "optimization"
+    assert captured["metadata"]["difficulty"] == 5.0
+    assert captured["metadata"]["source"] == "omni"
+    assert captured["metadata"]["answer_type"] == "number"
+    assert "expected_answer" not in captured["metadata"]
+    assert "solution" not in captured["metadata"]
