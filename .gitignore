@@ -16,3 +16,6 @@ logs/*.jsonl
 data/omni_math_sample.json
 data/omni_math_*sample*.json
 outputs/omni_*coverage*.md
+
+# Local official-style runner outputs
+outputs_user_agent/
