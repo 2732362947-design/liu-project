@@ -1,17 +1,16 @@
 import argparse
 import inspect
 import json
+import os
 import time
 from pathlib import Path
 
-from config import PIPELINE_MAX_ATTEMPTS
 from agents.answer_extractor_agent import extract_fallback_final_answer, extract_final_answer
 from agents.classifier_agent import classify_problem
 from agents.explainer_agent import explain_solution
 from agents.planner_agent import make_plan
 from agents.solver_agent import build_solver_prompt, solve_problem
 from agents.verifier_agent import verify_solution
-from intern_s1_client import classify_intern_s1_error
 
 
 ROOT = Path(__file__).resolve().parent
@@ -19,6 +18,19 @@ DATA_FILE = ROOT / "data" / "sample_questions.json"
 OUTPUT_FILE = ROOT / "outputs" / "results.json"
 LOG_FILE = ROOT / "logs" / "run_log.jsonl"
 SOLVER_NAME = "intern-s1"
+DEFAULT_PIPELINE_MAX_ATTEMPTS = 2
+
+
+def _fake_llm_enabled() -> bool:
+    return os.getenv("AGENT_SYSTEM_FAKE_LLM", "").strip().lower() in {"1", "true", "yes"}
+
+
+def _pipeline_max_attempts() -> int:
+    if _fake_llm_enabled():
+        return int(os.getenv("PIPELINE_MAX_ATTEMPTS", str(DEFAULT_PIPELINE_MAX_ATTEMPTS)))
+    from config import PIPELINE_MAX_ATTEMPTS
+
+    return PIPELINE_MAX_ATTEMPTS
 
 
 def _resolve_path(path: str | Path) -> Path:
@@ -63,6 +75,8 @@ def _safe_summary(text: str, limit: int = 300) -> str:
 def _error_type(solution: str) -> str | None:
     if not solution.lower().startswith("[intern-s1 error]"):
         return None
+    from intern_s1_client import classify_intern_s1_error
+
     return classify_intern_s1_error(solution)
 
 
@@ -177,6 +191,63 @@ def _run_attempt(
     }
 
 
+def _run_fake_attempt(
+    problem: str,
+    domain: str,
+    solver_key: str,
+    plan: list[str],
+    round_number: int,
+    retry_context: str | None,
+):
+    attempt_started = time.perf_counter()
+    prompt_chars = len(build_solver_prompt(problem, domain, plan, retry_context, solver_key))
+    solution = "测试模式解题过程。最终答案：2"
+    extraction = {
+        "final_answer": "2",
+        "answer_type": "number",
+        "status": "passed",
+        "reason": "测试模式固定答案。",
+    }
+    verification = {
+        "status": "passed",
+        "issues": [],
+        "severity": "none",
+        "suggestion": "测试模式跳过真实模型调用。",
+        "feedback": "测试模式跳过真实模型调用。",
+        "checks": {"fake_llm": True},
+    }
+    attempt = {
+        "round": round_number,
+        "attempt": round_number,
+        "status": "success",
+        "final_answer": "2",
+        "model_call_status": "success",
+        "extract_status": "passed",
+        "verification_status": "passed",
+        "error_type": None,
+        "raw_error_summary": "",
+        "prompt_chars": prompt_chars,
+        "issue": None,
+        "time_cost_seconds": round(time.perf_counter() - attempt_started, 4),
+    }
+    return {
+        "solution": solution,
+        "model_call_status": "success",
+        "extraction": extraction,
+        "verification": verification,
+        "final_answer": "2",
+        "attempt": attempt,
+        "steps": [
+            {
+                "step": "solve",
+                "status": "ok",
+                "duration_ms": 0.0,
+                "error": "",
+            }
+        ],
+    }
+
+
 def run_pipeline(
     input_path: str | Path = DATA_FILE,
     output_path: str | Path = OUTPUT_FILE,
@@ -191,7 +262,8 @@ def run_pipeline(
         questions = questions[:limit]
     output_file.parent.mkdir(parents=True, exist_ok=True)
     LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
-    attempt_limit = max(1, max_attempts if max_attempts is not None else PIPELINE_MAX_ATTEMPTS)
+    attempt_limit = max(1, max_attempts if max_attempts is not None else _pipeline_max_attempts())
+    fake_llm = _fake_llm_enabled()
 
     results = []
     with LOG_FILE.open("w", encoding="utf-8") as log_file:
@@ -221,15 +293,25 @@ def run_pipeline(
                 retry_context = None
                 last_attempt = None
                 for round_number in range(1, attempt_limit + 1):
-                    last_attempt = _run_attempt(
-                        problem,
-                        domain,
-                        solver_key,
-                        plan,
-                        round_number,
-                        attempt_limit,
-                        retry_context,
-                    )
+                    if fake_llm:
+                        last_attempt = _run_fake_attempt(
+                            problem,
+                            domain,
+                            solver_key,
+                            plan,
+                            round_number,
+                            retry_context,
+                        )
+                    else:
+                        last_attempt = _run_attempt(
+                            problem,
+                            domain,
+                            solver_key,
+                            plan,
+                            round_number,
+                            attempt_limit,
+                            retry_context,
+                        )
                     attempts.append(last_attempt["attempt"])
                     step_logs.extend(last_attempt["steps"])
                     if (
@@ -297,6 +379,8 @@ def run_pipeline(
                 "answer_type": answer_type,
                 "fallback_final_answer": fallback_final_answer,
                 "model_call_status": model_call_status,
+                "model_failed": model_call_status == "failed",
+                "error_type": attempts[-1].get("error_type") if attempts else None,
                 "explanation": explanation,
                 "verification": verification,
                 "confidence": confidence,
@@ -345,7 +429,7 @@ def main() -> None:
     print(f"output={args.output}", flush=True)
     print(f"limit={args.limit}", flush=True)
     print(f"sleep={args.sleep}", flush=True)
-    print(f"attempts={args.attempts if args.attempts is not None else PIPELINE_MAX_ATTEMPTS}", flush=True)
+    print(f"attempts={args.attempts if args.attempts is not None else _pipeline_max_attempts()}", flush=True)
     run_pipeline(
         args.input,
         output_file,

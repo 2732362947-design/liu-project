@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import sys
 
@@ -9,17 +10,25 @@ def _run_runner(args=None):
     command = [sys.executable, "runner.py"]
     if args:
         command.extend(args)
+    env = os.environ.copy()
+    env["AGENT_SYSTEM_FAKE_LLM"] = "1"
+    env.pop("INTERN_S1_API_KEY", None)
+    env.pop("DEEPSEEK_API_KEY", None)
+    env.pop("OPENAI_API_KEY", None)
     return subprocess.run(
         command,
         check=True,
         timeout=10,
         capture_output=True,
         text=True,
+        env=env,
     )
 
 
 def test_runner_generates_results_file():
-    _run_runner()
+    completed = _run_runner()
+
+    assert "calling Intern-S1" not in completed.stdout
 
     assert OUTPUT_FILE.exists()
     questions = json.loads(DATA_FILE.read_text(encoding="utf-8"))
@@ -55,6 +64,7 @@ def test_runner_accepts_input_and_output_args():
     questions = json.loads(DATA_FILE.read_text(encoding="utf-8"))
     assert len(saved_results) == len(questions)
     assert all(isinstance(item["attempts"], list) for item in saved_results)
+    assert all(item["model_failed"] is False for item in saved_results)
 
 
 def test_runner_accepts_limit_and_sleep_args():
@@ -94,8 +104,9 @@ def test_runner_limit_one_generates_one_result():
     saved_results = json.loads(open(output_file, encoding="utf-8").read())
     assert len(saved_results) == 1
     item = saved_results[0]
-    for field in ("final_answer", "answer_type", "model_call_status", "attempts", "time_cost_seconds"):
+    for field in ("final_answer", "answer_type", "model_call_status", "attempts", "time_cost_seconds", "model_failed"):
         assert field in item
+    assert item["model_failed"] is False
 
 
 def test_runner_attempts_one_limits_attempt_count():
@@ -120,3 +131,4 @@ def test_runner_attempts_one_limits_attempt_count():
     assert len(attempts) <= 1
     assert "prompt_chars" in attempts[0]
     assert "error_type" in attempts[0]
+    assert saved_results[0]["model_failed"] is False

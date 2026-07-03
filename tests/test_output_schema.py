@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import sys
 
@@ -6,12 +7,18 @@ from runner import OUTPUT_FILE
 
 
 def _run_runner():
+    env = os.environ.copy()
+    env["AGENT_SYSTEM_FAKE_LLM"] = "1"
+    env.pop("INTERN_S1_API_KEY", None)
+    env.pop("DEEPSEEK_API_KEY", None)
+    env.pop("OPENAI_API_KEY", None)
     return subprocess.run(
         [sys.executable, "runner.py"],
         check=True,
         timeout=10,
         capture_output=True,
         text=True,
+        env=env,
     )
 
 
