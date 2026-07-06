@@ -9,6 +9,7 @@ from agents.classifier_agent import classify_problem, solver_key_for_domain
 from agents.planner_agent import make_plan
 from agents.solver_agent import build_solver_prompt, normalize_solver_key
 from agents.tools.combinatorics_graph_tool import solve_divisibility_subset_problem
+from agents.tools.finite_field_tool import solve_finite_field_problem
 from agents.verifier_agent import verify_solution
 
 
@@ -432,51 +433,52 @@ class ReasoningAgent:
         solver_key: str,
         trace: list[dict],
     ) -> dict | None:
-        tool_result = solve_divisibility_subset_problem(problem)
-        if tool_result is None:
-            return None
+        local_tools = [
+            solve_divisibility_subset_problem,
+            solve_finite_field_problem,
+        ]
+        for tool_fn in local_tools:
+            tool_result = tool_fn(problem)
+            if tool_result is None:
+                continue
 
-        details = tool_result.get("details", {})
-        trace.append(_trace("local_tool_detect", f"tool_name={tool_result.get('tool_name')}, n={details.get('n')}"))
-        final_answer = str(tool_result.get("final_answer") or "").strip()
-        solution = str(tool_result.get("solution") or "")
-        verifier_answer_type = expected_answer_type or "number"
-        verification = verify_solution(
-            problem,
-            solution,
-            final_answer,
-            answer_type=verifier_answer_type,
-            domain=domain,
-            solver_key=solver_key,
-        )
-        trace.append(
-            _trace(
-                "local_tool_solve",
-                (
-                    f"tool_name={tool_result.get('tool_name')}, "
-                    f"n={details.get('n')}, "
-                    f"edge_count={details.get('edge_count')}, "
-                    f"isolated_count={details.get('isolated_count')}, "
-                    f"max_independent_set_size={details.get('max_independent_set_size')}, "
-                    f"K={details.get('K')}, "
-                    f"one_max_independent_set_len={len(details.get('one_max_independent_set') or [])}, "
-                    f"one_max_independent_set_head={(details.get('one_max_independent_set') or [])[:20]}"
-                ),
+            details = tool_result.get("details", {})
+            trace.append(_trace("local_tool_detect", f"tool_name={tool_result.get('tool_name')}, details={details}"))
+            final_answer = str(tool_result.get("final_answer") or "").strip()
+            solution = str(tool_result.get("solution") or "")
+            verifier_answer_type = expected_answer_type or "number"
+            verification = verify_solution(
+                problem,
+                solution,
+                final_answer,
+                answer_type=verifier_answer_type,
+                domain=domain,
+                solver_key=solver_key,
             )
-        )
-        trace.append(
-            _trace(
-                "verify",
-                (
-                    f"status={verification.get('status')}, "
-                    f"severity={verification.get('severity')}, "
-                    f"expected_answer_type={verifier_answer_type}"
-                ),
+            trace.append(
+                _trace(
+                    "local_tool_solve",
+                    (
+                        f"tool_name={tool_result.get('tool_name')}, "
+                        f"final_answer={final_answer!r}, "
+                        f"details={details}"
+                    ),
+                )
             )
-        )
-        final_response = final_answer if _verification_allows_final_answer(final_answer, verification) else FALLBACK_RESPONSE
-        trace.append(_trace("finalize", f"final_response_chars={len(final_response)}"))
-        return {"final_response": final_response, "trace": trace}
+            trace.append(
+                _trace(
+                    "verify",
+                    (
+                        f"status={verification.get('status')}, "
+                        f"severity={verification.get('severity')}, "
+                        f"expected_answer_type={verifier_answer_type}"
+                    ),
+                )
+            )
+            final_response = final_answer if _verification_allows_final_answer(final_answer, verification) else FALLBACK_RESPONSE
+            trace.append(_trace("finalize", f"final_response_chars={len(final_response)}"))
+            return {"final_response": final_response, "trace": trace}
+        return None
 
     def solve(self, problem: str, metadata: dict | None) -> dict:
         problem_text = str(problem or "")

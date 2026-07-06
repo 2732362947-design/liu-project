@@ -136,9 +136,9 @@ def test_user_agent_uses_local_tool_without_calling_client():
     assert "local_tool_detect" in steps
     assert "local_tool_solve" in steps
     solve_trace = next(item["content"] for item in result["trace"] if item["step"] == "local_tool_solve")
-    assert "max_independent_set_size=38" in solve_trace
-    assert "K=39" in solve_trace
-    assert "isolated_count=26" in solve_trace
+    assert "'K': 39" in solve_trace
+    assert "'max_independent_set_size': 38" in solve_trace
+    assert "'isolated_count': 26" in solve_trace
 
 
 def test_nonmatching_problem_uses_client():
