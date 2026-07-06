@@ -35,6 +35,16 @@ def test_all_local_exact_tools_hit_without_calling_client():
             "expected": "40",
             "tool_marker": "number_theory_tool",
         },
+        {
+            "problem": "Find Fibonacci number F_10.",
+            "expected": "55",
+            "tool_marker": "recurrence_sequence_tool",
+        },
+        {
+            "problem": "Solve the equation 2x + 5 = 17.",
+            "expected": "x=6",
+            "tool_marker": "elementary_algebra_tool",
+        },
     ]
 
     for case in cases:

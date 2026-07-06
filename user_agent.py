@@ -10,8 +10,10 @@ from agents.planner_agent import make_plan
 from agents.solver_agent import build_solver_prompt, normalize_solver_key
 from agents.tools.combinatorics_counting_tool import solve_combinatorics_counting_problem
 from agents.tools.combinatorics_graph_tool import solve_divisibility_subset_problem
+from agents.tools.elementary_algebra_tool import solve_elementary_algebra_problem
 from agents.tools.finite_field_tool import solve_finite_field_problem
 from agents.tools.number_theory_tool import solve_number_theory_problem
+from agents.tools.recurrence_sequence_tool import solve_recurrence_sequence_problem
 from agents.verifier_agent import verify_solution
 
 
@@ -441,6 +443,8 @@ class ReasoningAgent:
             solve_finite_field_problem,
             solve_combinatorics_counting_problem,
             solve_number_theory_problem,
+            solve_recurrence_sequence_problem,
+            solve_elementary_algebra_problem,
         ]
         for tool_fn in local_tools:
             tool_result = tool_fn(problem)

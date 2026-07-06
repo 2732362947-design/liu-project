@@ -255,3 +255,43 @@ def test_verify_number_answer_type_rejects_expression_answer():
 
     assert result["status"] == "failed"
     assert any(issue["code"] == "answer_type_mismatch" for issue in result["issues"])
+
+
+def test_verify_number_answer_type_accepts_algebra_root_list_in_context():
+    result = verify_solution(
+        "Solve the equation x^2 - 5x + 6 = 0.",
+        "最终答案：x=2,3",
+        "x=2,3",
+        answer_type="number",
+        domain="algebra",
+        solver_key="algebra",
+    )
+
+    assert result["status"] == "passed"
+
+
+def test_verify_number_answer_type_accepts_distinct_variable_assignments_in_context():
+    result = verify_solution(
+        "Solve the system 2x + y = 5, x - y = 1.",
+        "最终答案：x=2, y=1",
+        "x=2, y=1",
+        answer_type="number",
+        domain="algebra",
+        solver_key="algebra",
+    )
+
+    assert result["status"] == "passed"
+
+
+def test_verify_number_answer_type_rejects_repeated_variable_assignment_list():
+    result = verify_solution(
+        "Find the number.",
+        "最终答案：x = 2, x = 3",
+        "x = 2, x = 3",
+        answer_type="number",
+        domain="algebra",
+        solver_key="algebra",
+    )
+
+    assert result["status"] == "failed"
+    assert any(issue["code"] == "answer_type_mismatch" for issue in result["issues"])

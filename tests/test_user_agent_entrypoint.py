@@ -58,7 +58,10 @@ def test_solve_calls_chat_and_returns_dict_with_trace():
 
 
 def test_trace_contains_required_steps():
-    result = ReasoningAgent(FakeClient("解得 x=6。\n最终答案：x=6")).solve("解方程 2x+5=17", {})
+    result = ReasoningAgent(FakeClient("f'(x)=2x，所以 f'(3)=6。\n最终答案：6")).solve(
+        "求 f(x)=x^2 在 x=3 处的导数值。",
+        {},
+    )
 
     steps = _steps(result)
 

@@ -139,6 +139,23 @@ def _is_single_number_answer(text: str | None) -> bool:
     return False
 
 
+def _is_variable_assignment_answer(text: str | None) -> bool:
+    normalized = _compact(text).replace(" ", "")
+    number_pattern = r"-?\d+(?:\.\d+)?(?:/-?\d+(?:\.\d+)?)?"
+    if re.fullmatch(rf"[a-zA-Z]={number_pattern}(?:,{number_pattern})*", normalized):
+        return True
+    assignments = re.fullmatch(rf"([a-zA-Z]={number_pattern})(?:,([a-zA-Z]={number_pattern}))*", normalized)
+    if not assignments:
+        return False
+    variables = re.findall(r"([a-zA-Z])=", normalized)
+    return len(variables) == len(set(variables))
+
+
+def _context_allows_single_variable_assignment(context: str) -> bool:
+    markers = ("algebra", "equation", "solve", "方程", "求 x", "求x")
+    return any(marker in context for marker in markers)
+
+
 def _is_no_solution_answer(text: str | None) -> bool:
     normalized = _normalized_compact(text)
     return normalized in {
@@ -268,6 +285,8 @@ def verify_solution(
         if _is_no_solution_answer(final_text) and _context_allows_no_solution_answer(context):
             checks["number_special_form"] = True
         elif _is_modular_answer(final_text) and _context_allows_modular_answer(context):
+            checks["number_special_form"] = True
+        elif _is_variable_assignment_answer(final_text) and _context_allows_single_variable_assignment(context):
             checks["number_special_form"] = True
         elif _extract_number(final_text) is None:
             checks["answer_type_valid"] = False
