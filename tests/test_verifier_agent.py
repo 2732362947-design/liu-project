@@ -153,6 +153,75 @@ def test_verify_number_answer_type_accepts_latex_fraction():
     assert result["status"] == "passed"
 
 
+def test_verify_number_answer_type_accepts_no_solution_text():
+    for final_answer in ("无解", "不存在", "No solution"):
+        result = verify_solution(
+            "求数论问题的答案",
+            f"推理完成，最终答案：{final_answer}",
+            final_answer,
+            answer_type="number",
+            domain="number_theory",
+            solver_key="number_theory",
+        )
+
+        assert result["status"] == "passed"
+
+
+def test_verify_number_answer_type_rejects_no_solution_in_unrelated_context():
+    result = verify_solution(
+        "What is the probability of heads?",
+        "最终答案：无解",
+        "无解",
+        answer_type="number",
+        domain="probability",
+        solver_key="probability",
+    )
+
+    assert result["status"] == "failed"
+    assert any(issue["code"] == "number_without_digits" for issue in result["issues"])
+
+
+def test_verify_number_answer_type_accepts_modular_answers():
+    for final_answer in ("8 mod 15", "x ≡ 8 mod 15"):
+        result = verify_solution(
+            "Solve the congruences.",
+            f"CRT gives 最终答案：{final_answer}",
+            final_answer,
+            answer_type="number",
+            domain="number_theory",
+            solver_key="number_theory",
+        )
+
+        assert result["status"] == "passed"
+
+
+def test_verify_number_answer_type_rejects_modular_answer_in_unrelated_context():
+    result = verify_solution(
+        "What is the probability of heads?",
+        "最终答案：8 mod 15",
+        "8 mod 15",
+        answer_type="number",
+        domain="probability",
+        solver_key="probability",
+    )
+
+    assert result["status"] == "failed"
+    assert any(issue["code"] == "answer_type_mismatch" for issue in result["issues"])
+
+
+def test_verify_expression_accepts_congruence_answer():
+    result = verify_solution(
+        "Solve the congruence.",
+        "最终答案：x ≡ 8 mod 15",
+        "x ≡ 8 mod 15",
+        answer_type="expression",
+        domain="number_theory",
+        solver_key="number_theory",
+    )
+
+    assert result["status"] == "passed"
+
+
 def test_verify_expression_rejects_bare_number():
     result = verify_solution("求表达式", "最终答案：2", "2", answer_type="expression")
 
@@ -172,3 +241,17 @@ def test_verify_expression_rejects_unknown_placeholder_text():
 
     assert result["status"] == "failed"
     assert any(issue["code"] == "final_answer_not_meaningful" for issue in result["issues"])
+
+
+def test_verify_fallback_response_is_not_meaningful():
+    result = verify_solution("求答案", "未能得到可靠答案", "未能得到可靠答案", answer_type="number")
+
+    assert result["status"] == "failed"
+    assert any(issue["code"] == "final_answer_not_meaningful" for issue in result["issues"])
+
+
+def test_verify_number_answer_type_rejects_expression_answer():
+    result = verify_solution("求一个数", "最终答案：x+1", "x+1", answer_type="number")
+
+    assert result["status"] == "failed"
+    assert any(issue["code"] == "answer_type_mismatch" for issue in result["issues"])

@@ -41,6 +41,27 @@ def test_extract_plain_number_answer_type():
     assert result["answer_type"] == "number"
 
 
+def test_extract_common_real_model_answer_formats():
+    cases = [
+        ("最终答案：\\boxed{42}", "42"),
+        ("答案为 42。", "42"),
+        ("Therefore, the final answer is 42.", "42"),
+        (r"\boxed{\frac{1}{2}}", r"\frac{1}{2}"),
+        ("最终答案是 x+1", "x+1"),
+        ("The answer is no solution.", "no solution"),
+        ("不存在", "不存在"),
+        ("无解", "无解"),
+        ("8 mod 15", "8 mod 15"),
+        (r"x \equiv 8 \pmod{15}", "x ≡ 8 mod 15"),
+    ]
+
+    for solution, expected in cases:
+        result = extract_final_answer("求答案。", solution, "number_theory")
+
+        assert result["status"] == "passed"
+        assert result["final_answer"] == expected
+
+
 def test_extract_error_failed():
     result = extract_final_answer("任意题", "[intern-s1 error] timeout", "unknown")
 

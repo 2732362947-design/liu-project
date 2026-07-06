@@ -1,0 +1,6 @@
+{"idx":1,"id":"local_combinatorics_graph_001","problem":"Find the smallest positive integer K such that every K-element subset of {1,2,...,50} contains two distinct elements a,b such that a+b divides ab.","metadata":{"answer_type":"number","domain":"combinatorics"}}
+{"idx":2,"id":"local_finite_field_001","problem":"设 F_81 为 81 元有限域。T={α∈F_81 | F_81=F_3(α)}。求 T 中元素的个数。","metadata":{"answer_type":"number","domain":"number_theory"}}
+{"idx":3,"id":"local_combinatorics_counting_001","problem":"How many derangements are there of 5 elements?","metadata":{"answer_type":"number","domain":"combinatorics"}}
+{"idx":4,"id":"local_number_theory_001","problem":"Compute Euler's totient function phi(100).","metadata":{"answer_type":"number","domain":"number_theory"}}
+{"idx":5,"id":"fallback_algebra_001","problem":"Solve the equation 2x+5=17.","metadata":{"answer_type":"number","domain":"algebra"}}
+{"idx":6,"id":"fallback_probability_001","problem":"A fair six-sided die is rolled once. What is the probability that the result is even?","metadata":{"answer_type":"number","domain":"probability"}}

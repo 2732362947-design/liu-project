@@ -52,6 +52,7 @@ PLACEHOLDER_PHRASES = (
     "具体整数",
     "实际答案",
     "待求答案",
+    "本题计算结果",
     "placeholder",
 )
 
@@ -218,9 +219,9 @@ def _build_prompt_constraints(problem: str, solver_key: str, expected_answer_typ
     if _problem_expects_number_first(problem, expected_answer_type):
         constraints.append(
             "请先输出一行：\n"
-            "最终答案：26\n"
-            "其中 26 只是格式示例，实际作答时必须替换为本题计算得到的答案；"
-            "不要输出尖括号、占位符或“答案”二字作为答案内容。"
+            "最终答案：[本题计算结果]\n"
+            "其中方括号内容只是格式说明，实际作答时必须替换为本题计算得到的答案；"
+            "不要原样输出方括号、占位符或“答案”二字作为答案内容。"
             "然后再给简洁推理。如果推理较长，也必须先给最终答案，避免最终答案因截断丢失。"
         )
     if str(expected_answer_type or "").lower() == "expression":
@@ -353,8 +354,8 @@ def _build_correction_prompt(
             "7. 不要输出变量赋值列表，例如 x=2, x=3。\n"
             "8. 不要输出多个候选答案。\n"
             "9. 如果题目问 smallest/minimum/number/integer，最终答案应为单个整数或数值表达式。\n"
-            "10. 先输出一行，例如“最终答案：26”，再用不超过 1200 字说明关键证明；"
-            "26 只是格式示例，实际答案必须替换为本题计算结果，不要输出尖括号或占位符。"
+            "10. 先输出一行“最终答案：[本题计算结果]”，再用不超过 1200 字说明关键证明；"
+            "方括号内容只是格式说明，实际答案必须替换为本题计算结果，不要原样输出方括号或占位符。"
         )
     if str(expected_answer_type or "").lower() == "expression":
         answer_type_instruction += (

@@ -30,6 +30,8 @@ EXPRESSION_MARKERS = (
     "->",
     "neg",
     "\\",
+    "≡",
+    "mod",
 )
 COUNT_PROBLEM_MARKERS = ("多少种", "选法", "组合", "排列")
 EQUATION_PROBLEM_MARKERS = ("方程", "equation", "solve")
@@ -63,6 +65,7 @@ PLACEHOLDER_PHRASES = (
     "具体整数",
     "实际答案",
     "待求答案",
+    "本题计算结果",
     "placeholder",
 )
 
@@ -134,6 +137,59 @@ def _is_single_number_answer(text: str | None) -> bool:
     if re.fullmatch(r"(答案是|答案为|结果是|结果为)?-?\d+(?:\.\d+)?(?:种(?:选法|方法)?|个(?:解)?|次)?", normalized):
         return True
     return False
+
+
+def _is_no_solution_answer(text: str | None) -> bool:
+    normalized = _normalized_compact(text)
+    return normalized in {
+        "无解",
+        "不存在",
+        "nosolution",
+        "noinverseexists",
+        "nomultiplicativeorderexists",
+    }
+
+
+def _context_allows_no_solution_answer(context: str) -> bool:
+    markers = (
+        "number_theory",
+        "congruence",
+        "同余",
+        "crt",
+        "chinese remainder",
+        "inverse",
+        "逆元",
+        "order",
+        "乘法阶",
+        "equation",
+        "方程",
+    )
+    return any(marker in context for marker in markers)
+
+
+def _is_modular_answer(text: str | None) -> bool:
+    compact = _compact(text)
+    normalized = compact.replace(r"\equiv", "≡").replace(r"\pmod", " mod ")
+    return bool(
+        re.fullmatch(r"-?\d+\s+mod\s+\d+", normalized, flags=re.IGNORECASE)
+        or re.fullmatch(r"x\s*≡\s*-?\d+\s*(?:\(?\s*mod\s+\d+\s*\)?)", normalized, flags=re.IGNORECASE)
+    )
+
+
+def _context_allows_modular_answer(context: str) -> bool:
+    markers = (
+        "number_theory",
+        "congruence",
+        "同余",
+        "crt",
+        "chinese remainder",
+        "modulo",
+        " mod ",
+        "模 ",
+        "中国剩余",
+    )
+    padded = f" {context} "
+    return any(marker in padded for marker in markers)
 
 
 def _is_nonnegative_integer(text: str | None) -> bool:
@@ -209,7 +265,11 @@ def verify_solution(
         _add_issue(issues, "error_diagnostic", "high", "solution or final_answer contains an error diagnostic")
 
     if kind == "number" and final_text:
-        if _extract_number(final_text) is None:
+        if _is_no_solution_answer(final_text) and _context_allows_no_solution_answer(context):
+            checks["number_special_form"] = True
+        elif _is_modular_answer(final_text) and _context_allows_modular_answer(context):
+            checks["number_special_form"] = True
+        elif _extract_number(final_text) is None:
             checks["answer_type_valid"] = False
             checks["final_answer_supported"] = False
             _add_issue(issues, "number_without_digits", "high", "number final_answer has no parseable number")

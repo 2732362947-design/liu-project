@@ -11,16 +11,32 @@ def _normalize_number(value: float) -> str:
 
 def _clean_answer(answer: str) -> str:
     answer = answer.strip()
-    answer = re.sub(r"^[\s*#：:，,。.-]+|[\s*#，,。;；]+$", "", answer)
+    answer = re.sub(r"^[\s*#：:，,。.-]+|[\s*#，,。.!！?？;；]+$", "", answer)
+    answer = re.sub(r"^(?:是|为)\s*", "", answer)
     return answer.strip()
+
+
+def _unwrap_boxed(answer: str) -> str:
+    text = answer.strip()
+    match = re.fullmatch(r"\\boxed\{(.+)\}", text)
+    if match:
+        return match.group(1).strip()
+    return text
 
 
 def _answer_type(answer: str, domain: str) -> str:
     if not answer:
         return "unknown"
+    compact_answer = answer.replace(" ", "").lower()
+    if compact_answer in {"无解", "不存在", "nosolution", "noinverseexists", "nomultiplicativeorderexists"}:
+        return "text"
+    if re.search(r"\bmod\b|\\pmod|≡", answer):
+        return "expression"
     if domain == "probability" or re.fullmatch(r"-?\d+(?:\.\d+)?|-?\d+\s*/\s*-?\d+", answer):
         return "number"
     compact = answer.replace(" ", "")
+    if re.fullmatch(r"\\boxed\{.+\}", compact):
+        return _answer_type(_unwrap_boxed(answer), domain)
     if re.search(r"\\(?:frac|sqrt|sin|cos|tan|log|ln)\b", compact):
         return "expression"
     if re.search(r"[a-zA-Z][+\-*/^_][a-zA-Z0-9\\]", compact) or re.search(r"\d+[a-zA-Z]", compact):
@@ -33,20 +49,31 @@ def _answer_type(answer: str, domain: str) -> str:
 
 
 def _extract_near_keywords(solution: str) -> str | None:
-    keywords = ("最终答案", "答案", "结论", "因此", "所以", "为：")
+    chinese_keywords = ("最终答案", "答案", "结论", "因此", "所以", "为：")
+    english_patterns = (
+        r"(?:therefore,\s*)?(?:the\s+)?final answer is\s+(.+)",
+        r"(?:therefore,\s*)?the answer is\s+(.+)",
+        r"(?:therefore,\s*)?answer:\s*(.+)",
+    )
     for line in reversed(solution.splitlines()):
         stripped = line.strip()
         if not stripped:
             continue
         if any(negative in stripped for negative in ("没有明确答案", "无明确答案", "无法确定答案")):
             continue
-        for keyword in keywords:
+        for pattern in english_patterns:
+            match = re.search(pattern, stripped, flags=re.IGNORECASE)
+            if match:
+                answer = _clean_answer(match.group(1))
+                if answer:
+                    return _unwrap_boxed(answer)
+        for keyword in chinese_keywords:
             if keyword in stripped:
                 answer = stripped.split(keyword, 1)[-1]
                 answer = answer.lstrip(":： ，,")
                 answer = _clean_answer(answer)
                 if answer:
-                    return answer
+                    return _unwrap_boxed(answer)
     return None
 
 
@@ -142,6 +169,37 @@ def _extract_last_number(solution: str) -> str | None:
     return None
 
 
+def _extract_boxed_answer(solution: str) -> str | None:
+    match = re.search(r"\\boxed\{((?:[^{}]|\\frac\{[^{}]+\}\{[^{}]+\})+)\}", solution)
+    if match:
+        return match.group(1).strip()
+    return None
+
+
+def _extract_no_solution_answer(solution: str) -> str | None:
+    lower = solution.lower()
+    if re.search(r"\bno solution\b", lower):
+        return "no solution"
+    if re.search(r"\bno inverse exists\b", lower):
+        return "No inverse exists"
+    if "无解" in solution:
+        return "无解"
+    if "不存在" in solution:
+        return "不存在"
+    return None
+
+
+def _extract_modular_answer(solution: str) -> str | None:
+    normalized = solution.replace(r"\equiv", "≡").replace(r"\pmod", " mod ")
+    congruence = re.search(r"\bx\s*≡\s*(-?\d+)\s*(?:\(\s*)?mod\s*\{?(\d+)\}?\s*\)?", normalized)
+    if congruence:
+        return f"x ≡ {congruence.group(1)} mod {congruence.group(2)}"
+    modular = re.search(r"(?<![\w/])(-?\d+)\s+mod\s+(\d+)(?![\w/])", normalized, flags=re.IGNORECASE)
+    if modular:
+        return f"{modular.group(1)} mod {modular.group(2)}"
+    return None
+
+
 def extract_fallback_final_answer(problem: str) -> str | None:
     compact = problem.replace(" ", "")
     if "x^2-5x+6=0" in compact:
@@ -190,6 +248,9 @@ def extract_final_answer(problem: str, solution: str, domain: str) -> dict:
 
     extractors = (
         ("keyword", lambda: _extract_near_keywords(solution_text)),
+        ("boxed", lambda: _extract_boxed_answer(solution_text)),
+        ("no_solution", lambda: _extract_no_solution_answer(solution_text)),
+        ("modular", lambda: _extract_modular_answer(solution_text)),
         ("quadratic_roots", lambda: _extract_quadratic_roots(solution_text)),
         ("probability", lambda: _extract_probability(solution_text)),
         ("derivative", lambda: _extract_derivative_value(problem, solution_text)),

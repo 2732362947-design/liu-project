@@ -385,7 +385,8 @@ def test_number_prompt_requires_final_answer_first():
 
     prompt = client.calls[0]["messages"][0]["content"]
     assert "请先输出一行" in prompt
-    assert "最终答案：26" in prompt
+    assert "最终答案：[本题计算结果]" in prompt
+    assert "最终答案：26" not in prompt
     assert "避免最终答案因截断丢失" in prompt
     assert "<答案>" not in prompt
     assert "<单个整数" not in prompt
@@ -487,7 +488,8 @@ def test_correction_prompt_compresses_long_first_solution():
     assert "hidden" not in prompt
     assert "单独的数值" in prompt
     assert "先输出一行" in prompt
-    assert "最终答案：26" in prompt
+    assert "最终答案：[本题计算结果]" in prompt
+    assert "最终答案：26" not in prompt
     assert "不超过 1200 字" in prompt
     assert "<答案>" not in prompt
     assert "<单个整数" not in prompt
