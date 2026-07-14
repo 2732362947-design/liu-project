@@ -199,6 +199,29 @@ def test_build_metadata_top_level_fallback_filters_answer_fields():
     assert metadata["answer_type"] == "number"
 
 
+def test_build_metadata_nested_filters_all_answer_like_variants():
+    item = {
+        "metadata": {
+            "answer": "blocked-1",
+            "Answer": "blocked-2",
+            "expected-answer": "blocked-3",
+            "Ground Truth": "blocked-4",
+            "ground_truth": "blocked-5",
+            "gold": "blocked-6",
+            "reference": "blocked-7",
+            "official_answer": "blocked-8",
+            "label": "blocked-9",
+            "target": "blocked-10",
+            "domain": "algebra",
+            "source": "local",
+        }
+    }
+
+    metadata = build_metadata(item, 3)
+
+    assert metadata == {"idx": 3, "domain": "algebra", "source": "local"}
+
+
 def test_run_one_exception_returns_error():
     class BadAgent:
         def solve(self, problem, metadata):

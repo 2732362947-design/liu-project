@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 import re
 from collections import Counter
 from pathlib import Path
@@ -8,7 +9,10 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_INPUT_FILE = Path(
-    "/home/ubuntu/.cache/modelscope/hub/datasets/AI-ModelScope/Omni-MATH/test.jsonl"
+    os.getenv(
+        "OMNI_MATH_INPUT",
+        Path.home() / ".cache" / "modelscope" / "hub" / "datasets" / "AI-ModelScope" / "Omni-MATH" / "test.jsonl",
+    )
 )
 DEFAULT_OUTPUT_FILE = ROOT / "data" / "omni_math_sample.json"
 

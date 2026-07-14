@@ -28,7 +28,21 @@ METADATA_ALLOWLIST = {
     "raw_domain",
     "solver_key",
 }
-METADATA_DENYLIST = {"answer", "expected_answer", "gold_answer", "reference_answer", "solution"}
+METADATA_DENYLIST = {
+    "answer",
+    "expected_answer",
+    "gold_answer",
+    "reference_answer",
+    "solution",
+    "gold",
+    "reference",
+    "ground_truth",
+    "expected",
+    "expected_solution",
+    "official_answer",
+    "label",
+    "target",
+}
 
 
 def _resolve_path(path: str | Path) -> Path:

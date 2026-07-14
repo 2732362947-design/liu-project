@@ -19,12 +19,28 @@ from agents.verifier_agent import verify_solution
 
 FALLBACK_RESPONSE = "未能得到可靠答案"
 MAX_SOLVE_ATTEMPTS = 2
+SHORT_ANSWER = "short_answer"
+WORKED_SOLUTION = "worked_solution"
 SOLUTION_HEAD_LIMIT = 300
 SOLUTION_TAIL_LIMIT = 500
 CORRECTION_HEAD_LIMIT = 800
 CORRECTION_TAIL_LIMIT = 1200
 SENSITIVE_MARKERS = ("authorization", "bearer", "api_key", "token")
-METADATA_DENYLIST = {"answer", "expected_answer", "gold_answer", "reference_answer", "solution"}
+METADATA_DENYLIST = {
+    "answer",
+    "expected_answer",
+    "gold_answer",
+    "reference_answer",
+    "solution",
+    "gold",
+    "reference",
+    "ground_truth",
+    "expected",
+    "expected_solution",
+    "official_answer",
+    "label",
+    "target",
+}
 INVALID_FINAL_ANSWERS = {
     ".",
     ",",
@@ -142,10 +158,133 @@ def _safe_metadata(metadata: dict | None) -> dict:
     safe = {}
     for key, value in metadata.items():
         key_text = str(key)
-        if key_text.lower() in METADATA_DENYLIST:
+        normalized_key = re.sub(r"[\s-]+", "_", key_text.strip().lower())
+        if normalized_key in METADATA_DENYLIST:
             continue
         safe[key_text] = value
     return safe
+
+
+def _determine_response_mode(
+    problem: str,
+    domain: str | None,
+    expected_answer_type: str | None,
+) -> str:
+    text = str(problem or "")
+    lowered = text.lower()
+    chinese_worked_signals = (
+        "证明",
+        "试证",
+        "证得",
+        "推导",
+        "导出",
+        "论证",
+        "说明为什么",
+        "解释为什么",
+        "请说明",
+        "给出证明",
+        "证明下列",
+    )
+    english_worked_patterns = (
+        r"\bprove\b",
+        r"\bshow\s+that\b",
+        r"\bderive\b",
+        r"\bjustify\b",
+        r"\bexplain\s+why\b",
+        r"\bdemonstrate\b",
+        r"\bgive\s+a\s+proof\b",
+    )
+    if any(signal in text for signal in chinese_worked_signals):
+        return WORKED_SOLUTION
+    if any(re.search(pattern, lowered) for pattern in english_worked_patterns):
+        return WORKED_SOLUTION
+    if str(domain or "").strip().lower() == "proof":
+        return WORKED_SOLUTION
+    if str(expected_answer_type or "").strip().lower() == "proof":
+        return WORKED_SOLUTION
+    return SHORT_ANSWER
+
+
+def _is_substantive_solution(solution: str | None, extracted_answer: str | None = None) -> bool:
+    text = str(solution or "").strip()
+    lowered = text.lower()
+    if not text or text == FALLBACK_RESPONSE:
+        return False
+    if any(marker in lowered for marker in ("[intern-s1 error]", "[mock intern-s1]")):
+        return False
+    if any(
+        marker in lowered
+        for marker in ("authorization", "bearer", "api_key", "api key", "system prompt", "metadata:", "debug log")
+    ):
+        return False
+
+    reasoning_lines = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if re.match(r"^(?:最终答案|最终结论|final\s+answer)\s*[:：]", stripped, flags=re.IGNORECASE):
+            continue
+        reasoning_lines.append(stripped)
+    reasoning_text = "".join(reasoning_lines)
+    compact_reasoning = re.sub(r"\s+", "", reasoning_text)
+    compact_answer = re.sub(r"\s+", "", str(extracted_answer or ""))
+    if compact_answer and compact_reasoning == compact_answer:
+        return False
+    return len(compact_reasoning) >= 12 and bool(re.search(r"[0-9A-Za-z\u4e00-\u9fff\\=]", compact_reasoning))
+
+
+def _has_clear_final_conclusion(solution: str, extracted_answer: str | None) -> bool:
+    tail = solution[-800:]
+    conclusion_markers = (
+        "最终答案",
+        "最终结论",
+        "结论是",
+        "因此",
+        "所以",
+        "故",
+        "从而",
+        "命题成立",
+        "得证",
+        "therefore",
+        "thus",
+        "hence",
+        "we conclude",
+        "final answer",
+    )
+    if any(marker in tail.lower() for marker in conclusion_markers):
+        return True
+    answer = str(extracted_answer or "").strip()
+    nonempty_lines = [line.strip() for line in solution.splitlines() if line.strip()]
+    if not answer or not nonempty_lines:
+        return False
+    last_line = nonempty_lines[-1].strip("$ ")
+    compact_last = re.sub(r"[\s。.!！]", "", last_line)
+    compact_answer = re.sub(r"[\s。.!！]", "", answer)
+    return compact_last in {compact_answer, rf"\boxed{{{compact_answer}}}"}
+
+
+def _compose_final_response(
+    *,
+    problem: str,
+    response_mode: str,
+    solution: str | None,
+    extracted_answer: str | None,
+    verification: dict | None,
+) -> str:
+    del problem  # 保留统一接口，当前合成规则不需要再次解析题面。
+    verified_answer = _verification_allows_final_answer(extracted_answer, verification)
+    answer_text = str(extracted_answer or "").strip()
+    if response_mode == SHORT_ANSWER:
+        return answer_text if verified_answer else FALLBACK_RESPONSE
+    if verified_answer and _is_substantive_solution(solution, extracted_answer):
+        solution_text = str(solution or "").strip()
+        if not _has_clear_final_conclusion(solution_text, extracted_answer):
+            solution_text = f"{solution_text}\n\n最终结论：{answer_text}"
+        return solution_text
+    if verified_answer:
+        return answer_text
+    return FALLBACK_RESPONSE
 
 
 def _domain_from_metadata(safe_metadata: dict | None) -> str | None:
@@ -209,22 +348,22 @@ def _expected_answer_type_from_metadata(safe_metadata: dict | None) -> str | Non
     return answer_type or None
 
 
-def _problem_expects_number_first(problem: str | None, expected_answer_type: str | None) -> bool:
-    text = str(problem or "").lower()
-    if str(expected_answer_type or "").lower() == "number":
-        return True
-    return any(marker in text for marker in ("smallest positive integer", "minimum integer", "number of"))
-
-
-def _build_prompt_constraints(problem: str, solver_key: str, expected_answer_type: str | None) -> str:
+def _build_prompt_constraints(
+    problem: str,
+    solver_key: str,
+    expected_answer_type: str | None,
+    response_mode: str,
+) -> str:
     constraints = []
-    if _problem_expects_number_first(problem, expected_answer_type):
+    if response_mode == SHORT_ANSWER:
         constraints.append(
-            "请先输出一行：\n"
-            "最终答案：[本题计算结果]\n"
-            "其中方括号内容只是格式说明，实际作答时必须替换为本题计算得到的答案；"
-            "不要原样输出方括号、占位符或“答案”二字作为答案内容。"
-            "然后再给简洁推理。如果推理较长，也必须先给最终答案，避免最终答案因截断丢失。"
+            "请先正确求解并只保留必要推理；在解答末尾单独输出一行清晰的“最终答案：...”。"
+            "省略寒暄和与题目无关的内容。"
+        )
+    else:
+        constraints.append(
+            "本题需要可独立判分的完整过程。请给出必要、连贯、自洽的证明或推导，不能只给结论；"
+            "在末尾清晰写出结论，并省略寒暄和与题目无关的内容。"
         )
     if str(expected_answer_type or "").lower() == "expression":
         constraints.append(
@@ -242,8 +381,14 @@ def _build_prompt_constraints(problem: str, solver_key: str, expected_answer_typ
     return "\n\n【输出格式与长度约束】\n" + "\n".join(f"{index + 1}. {item}" for index, item in enumerate(constraints))
 
 
-def _append_prompt_constraints(prompt: str, problem: str, solver_key: str, expected_answer_type: str | None) -> str:
-    constraint_text = _build_prompt_constraints(problem, solver_key, expected_answer_type)
+def _append_prompt_constraints(
+    prompt: str,
+    problem: str,
+    solver_key: str,
+    expected_answer_type: str | None,
+    response_mode: str,
+) -> str:
+    constraint_text = _build_prompt_constraints(problem, solver_key, expected_answer_type, response_mode)
     if not constraint_text:
         return prompt
     return f"{prompt}{constraint_text}"
@@ -337,6 +482,7 @@ def _build_correction_prompt(
     solver_key: str | None = None,
     domain: str | None = None,
     expected_answer_type: str | None = None,
+    response_mode: str = SHORT_ANSWER,
 ) -> str:
     verification = verification if isinstance(verification, dict) else {}
     safe_metadata = _safe_metadata(metadata)
@@ -352,22 +498,31 @@ def _build_correction_prompt(
     answer_type_instruction = ""
     if str(expected_answer_type or "").lower() == "number":
         answer_type_instruction = (
-            "\n6. 最终答案必须是一个单独的数值或数值表达式。\n"
-            "7. 不要输出变量赋值列表，例如 x=2, x=3。\n"
-            "8. 不要输出多个候选答案。\n"
-            "9. 如果题目问 smallest/minimum/number/integer，最终答案应为单个整数或数值表达式。\n"
-            "10. 先输出一行“最终答案：[本题计算结果]”，再用不超过 1200 字说明关键证明；"
-            "方括号内容只是格式说明，实际答案必须替换为本题计算结果，不要原样输出方括号或占位符。"
+            "\n【数值答案约束】\n"
+            "最终答案必须是一个单独的数值或数值表达式；不要输出变量赋值列表、多个候选答案或占位符。\n"
+            "如果题目问 smallest/minimum/number/integer，最终答案应为单个整数或数值表达式。\n"
+            "在解答末尾单独输出一行清晰的最终答案。"
         )
     if str(expected_answer_type or "").lower() == "expression":
         answer_type_instruction += (
-            "\n6. 上一次答案类型不符合要求：本题需要 expression 类型最终答案。\n"
-            "7. 不要再次返回纯数字或占位数字；除非表达式确实化简为常数，否则最终答案必须包含变量、运算符或函数形式。\n"
-            "8. 适用时请使用题目中的变量，并输出清晰的表达式。"
+            "\n【表达式答案约束】\n"
+            "本题需要 expression 类型最终答案。不要再次返回纯数字或占位数字；"
+            "除非表达式确实化简为常数，否则最终答案必须包含变量、运算符或函数形式。\n"
+            "适用时请使用题目中的变量，并输出清晰的表达式。"
         )
     if _problem_suggests_extremal_discrete(problem):
         answer_type_instruction += (
-            "\n不要继续列边或邻接表；请先给最终答案，再用结构分组、参数族、下界构造和上界证明说明。"
+            "\n不要继续列边或邻接表；请用结构分组、参数族、下界构造和上界证明说明，并在末尾给出最终答案。"
+        )
+    if response_mode == WORKED_SOLUTION:
+        response_instruction = (
+            "\n【响应模式】\n"
+            "本题需要可独立判分的完整过程：给出必要、连贯、自洽的证明或推导，不能只给结论。\n"
+            "在末尾清晰写出最终结论。"
+        )
+    else:
+        response_instruction = (
+            "\n【响应模式】\n请先正确求解并只保留必要推理，在末尾清晰写出最终答案。"
         )
     return (
         "你正在修正一道数学题的解答。\n\n"
@@ -393,6 +548,7 @@ def _build_correction_prompt(
         "3. 如果原答案正确，请说明并保持答案。\n"
         "4. 不要引用标准答案或隐藏评测信息。\n"
         "5. 不要输出 JSON，直接给出可读解答即可。"
+        f"{response_instruction}"
         f"{answer_type_instruction}"
     )
 
@@ -436,6 +592,7 @@ class ReasoningAgent:
         expected_answer_type: str | None,
         domain: str,
         solver_key: str,
+        response_mode: str,
         trace: list[dict],
     ) -> dict | None:
         local_tools = [
@@ -484,7 +641,13 @@ class ReasoningAgent:
                     ),
                 )
             )
-            final_response = final_answer if _verification_allows_final_answer(final_answer, verification) else FALLBACK_RESPONSE
+            final_response = _compose_final_response(
+                problem=problem,
+                response_mode=response_mode,
+                solution=solution,
+                extracted_answer=final_answer,
+                verification=verification,
+            )
             trace.append(_trace("finalize", f"final_response_chars={len(final_response)}"))
             return {"final_response": final_response, "trace": trace}
         return None
@@ -500,9 +663,18 @@ class ReasoningAgent:
             domain = classification.get("domain", "unknown")
             solver_key = classification.get("solver_key", "general")
             expected_answer_type = _expected_answer_type_from_metadata(safe_metadata)
+            response_mode = _determine_response_mode(problem_text, domain, expected_answer_type)
             trace.append(_trace("classify", f"domain={domain}, solver_key={solver_key}"))
+            trace.append(_trace("response_mode", f"response_mode={response_mode}"))
 
-            local_result = self._try_local_tools(problem_text, expected_answer_type, domain, solver_key, trace)
+            local_result = self._try_local_tools(
+                problem_text,
+                expected_answer_type,
+                domain,
+                solver_key,
+                response_mode,
+                trace,
+            )
             if local_result is not None:
                 return local_result
 
@@ -516,7 +688,13 @@ class ReasoningAgent:
                 retry_context=None,
                 solver_key=solver_key,
             )
-            prompt = _append_prompt_constraints(prompt, problem_text, solver_key, expected_answer_type)
+            prompt = _append_prompt_constraints(
+                prompt,
+                problem_text,
+                solver_key,
+                expected_answer_type,
+                response_mode,
+            )
             trace.append(_trace("solver_prompt", f"solver_key={solver_key}, prompt_chars={len(prompt)}"))
 
             solution = self._chat(prompt)
@@ -564,6 +742,7 @@ class ReasoningAgent:
 
             retry_final_answer = None
             retry_verification = None
+            retry_solution = None
             if retry_used and MAX_SOLVE_ATTEMPTS > 1:
                 correction_prompt = _build_correction_prompt(
                     problem_text,
@@ -574,6 +753,7 @@ class ReasoningAgent:
                     solver_key=solver_key,
                     domain=domain,
                     expected_answer_type=expected_answer_type,
+                    response_mode=response_mode,
                 )
                 trace.append(_trace("correction_prompt", f"correction_prompt_chars={len(correction_prompt)}"))
                 try:
@@ -613,12 +793,23 @@ class ReasoningAgent:
                 except Exception as exc:
                     trace.append(_trace("retry_model_call", f"error: {type(exc).__name__}"))
 
-            final_response = ""
             if _verification_allows_final_answer(retry_final_answer, retry_verification):
-                final_response = str(retry_final_answer).strip()
+                final_response = _compose_final_response(
+                    problem=problem_text,
+                    response_mode=response_mode,
+                    solution=retry_solution,
+                    extracted_answer=retry_final_answer,
+                    verification=retry_verification,
+                )
             elif _verification_allows_final_answer(final_answer, verification):
-                final_response = str(final_answer or "").strip()
-            if not final_response:
+                final_response = _compose_final_response(
+                    problem=problem_text,
+                    response_mode=response_mode,
+                    solution=solution,
+                    extracted_answer=final_answer,
+                    verification=verification,
+                )
+            else:
                 final_response = FALLBACK_RESPONSE
             trace.append(_trace("finalize", f"final_response_chars={len(final_response)}"))
             return {"final_response": final_response, "trace": trace}

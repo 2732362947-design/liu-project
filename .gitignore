@@ -3,6 +3,7 @@ __pycache__/
 **pycache**/
 *.pyc
 .pytest_cache/
+.venv/
 workspace/__pycache__/
 workspace/**pycache**/
 outputs/

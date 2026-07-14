@@ -112,7 +112,20 @@ def _extract_problem_keywords(problem: str) -> set[str]:
 
 def _extract_proof_conclusion(problem: str, solution: str) -> str | None:
     problem_keywords = _extract_problem_keywords(problem)
-    conclusion_markers = ("故", "因此", "所以", "从而", "于是", "可知", "结论")
+    conclusion_markers = (
+        "故",
+        "因此",
+        "所以",
+        "从而",
+        "于是",
+        "可知",
+        "结论",
+        "therefore",
+        "thus",
+        "hence",
+        "we conclude",
+        "it follows",
+    )
     best_answer = None
     best_score = 0
     for sentence in reversed(_split_sentences(solution)):
@@ -121,7 +134,7 @@ def _extract_proof_conclusion(problem: str, solution: str) -> str | None:
         if any(negative in sentence for negative in ("没有明确答案", "无明确答案", "无法确定答案")):
             continue
         score = sum(1 for keyword in problem_keywords if keyword and keyword in sentence)
-        if any(marker in sentence for marker in conclusion_markers):
+        if any(marker in sentence.lower() for marker in conclusion_markers):
             score += 2
         if any(keyword in sentence for keyword in ("子列", "收敛", "开集", "原像", "连续", "素数")):
             score += 1

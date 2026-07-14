@@ -1,4 +1,1 @@
-openai
-python-dotenv
-pytest
-requests
+# The official ReasoningAgent runtime uses only the Python standard library.

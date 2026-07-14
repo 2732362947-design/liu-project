@@ -9,7 +9,26 @@ ERROR_MARKERS = (
     "auth_error",
 )
 GENERIC_PROOF_FINALS = {"命题得证", "得证", "证毕", "证明完毕"}
-PROOF_MARKERS = ("因为", "所以", "故", "任取", "存在", "对于", "证明", "得证", "收敛", "推出")
+PROOF_MARKERS = (
+    "因为",
+    "所以",
+    "故",
+    "任取",
+    "存在",
+    "对于",
+    "证明",
+    "得证",
+    "收敛",
+    "推出",
+    "because",
+    "since",
+    "assume",
+    "let ",
+    "therefore",
+    "thus",
+    "hence",
+    "follows",
+)
 EXPRESSION_MARKERS = (
     "=",
     "^",
@@ -246,6 +265,7 @@ def verify_solution(
 ) -> dict:
     problem_text = _compact(problem)
     solution_text = _compact(solution)
+    solution_lower = solution_text.lower()
     final_text = _compact(final_answer)
     kind = (answer_type or "unknown").lower()
     context = f"{domain or ''} {solver_key or ''} {problem_text}".lower()
@@ -315,9 +335,10 @@ def verify_solution(
         normalized_final = _normalized_compact(final_text)
         if normalized_final in {_normalized_compact(value) for value in GENERIC_PROOF_FINALS}:
             _add_issue(issues, "generic_final_answer", "low", "proof final_answer is generic")
-        checks["proof_markers_present"] = any(marker in solution_text for marker in PROOF_MARKERS)
+        checks["proof_markers_present"] = any(marker in solution_lower for marker in PROOF_MARKERS)
         checks["has_substantive_conclusion"] = any(
-            marker in solution_text for marker in ("故", "所以", "推出", "收敛", "成立")
+            marker in solution_lower
+            for marker in ("故", "所以", "推出", "收敛", "成立", "therefore", "thus", "hence", "follows")
         )
         if not checks["proof_markers_present"]:
             checks["final_answer_supported"] = False

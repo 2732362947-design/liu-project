@@ -13,7 +13,6 @@ def _run_runner(args=None):
     env = os.environ.copy()
     env["AGENT_SYSTEM_FAKE_LLM"] = "1"
     env.pop("INTERN_S1_API_KEY", None)
-    env.pop("DEEPSEEK_API_KEY", None)
     env.pop("OPENAI_API_KEY", None)
     return subprocess.run(
         command,

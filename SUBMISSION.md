@@ -15,12 +15,12 @@ result = agent.solve(problem, metadata)
 
 ```json
 {
-  "final_response": "最终答案",
+  "final_response": "最终答案或完整证明过程",
   "trace": []
 }
 ```
 
-- `final_response` 是非空字符串。
+- `final_response` 是非空字符串。计算、选择、填空和解方程题返回短答案；明确要求证明、推导、解释或论证的题目保留可独立判分的完整过程。
 - `trace` 用于记录分类、规划、求解、提取答案、验证、最终化等步骤。
 - `trace` 不包含 API key、token、Authorization header 或个人隐私。
 
@@ -55,7 +55,7 @@ Local Exact Tools
 - Answer Extractor：提取最终答案。
 - Local Verifier：检查答案非空、格式、基本数学类型约束等。
 - Retry Correction when needed：当本地验证器发现答案为空、格式异常或验证不通过时，系统最多进行一次修正调用。
-- Final Response：返回官方要求的 `final_response`。
+- Final Response：按 `short_answer` 或 `worked_solution` 模式返回官方要求的 `final_response`。
 
 retry 使用原题、第一次解答和本地验证反馈构造 correction prompt，不使用标准答案或隐藏评测信息。
 
@@ -97,16 +97,25 @@ bash scripts/run_user_agent_local.sh
 
 ## 6. 依赖说明
 
-运行前安装依赖：
+正式运行安装：
 
 ```bash
 pip install -r requirements.txt
 ```
 
 - `requirements.txt` 应只包含正式入口需要的最小依赖。
+- 当前正式入口及传递导入链只依赖 Python 标准库。
 - 不要求 GPU。
 - 不依赖本地绝对路径。
 - 不依赖隐藏测试集或标准答案。
+
+本地开发安装：
+
+```bash
+pip install -r requirements-dev.txt
+```
+
+开发依赖只用于 pytest、本地 Intern-S client 和调试脚本，不会被正式入口导入。
 
 ## 7. 本地开发工具说明
 
@@ -126,6 +135,8 @@ dev_tools/check_domain_coverage.py：领域覆盖检查
 - 不在代码中硬编码 API key。
 - 不在 trace 中记录 token、Authorization header 或个人隐私。
 - `solve(problem, metadata)` 不使用 `metadata["answer"]` 作为最终答案。
+- metadata key 会先忽略大小写，并将空格、连字符规范化为下划线，再按精确 key 过滤。当前 denylist 为：`answer`、`expected_answer`、`gold_answer`、`reference_answer`、`solution`、`gold`、`reference`、`ground_truth`、`expected`、`expected_solution`、`official_answer`、`label`、`target`。
+- denylist 不做模糊子串匹配；`idx`、`domain`、`subject`、`source` 等正常字段仍可保留。
 - 正式评测不会依赖本地输出文件、dev review 文件或外部数据集。
 - 本地 Omni-MATH 样本仅用于压力测试和领域覆盖分析。
 
@@ -139,6 +150,7 @@ dev_tools/check_domain_coverage.py：领域覆盖检查
 - [ ] `trace` 可以 JSON 序列化
 - [ ] `pytest -q` 通过
 - [ ] `python3 dev_tools/check_submission_ready.py` 通过
+- [ ] `bash dev_tools/check_clean_environment.sh` 通过
 - [ ] 没有提交 `.env`
 - [ ] 没有提交 `outputs_user_agent/`
 - [ ] 没有硬编码 API key

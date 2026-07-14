@@ -139,7 +139,7 @@ def test_discrete_template_mentions_extremal_graph_modeling():
     assert "a+b" in template
     assert "ab" in template
     assert "gcd" in template
-    assert "先给结论" in template or "最终答案：26" in template
+    assert "末尾给出清晰的最终答案" in template
     assert "不要完整列出所有边" in template or "邻接表" in template
     assert "<答案>" not in template
     assert "<单个整数" not in template
