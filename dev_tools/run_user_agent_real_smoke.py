@@ -27,6 +27,8 @@ METADATA_ALLOWLIST = {
     "answer_type",
     "raw_domain",
     "solver_key",
+    "subject",
+    "category",
 }
 METADATA_DENYLIST = {
     "answer",
@@ -120,19 +122,29 @@ class RealInternClient:
 
 def _safe_metadata_from_item(item: dict, idx: str) -> dict:
     metadata = {"idx": idx}
+    source = item.get("metadata") if isinstance(item.get("metadata"), dict) else item
     for key in METADATA_ALLOWLIST:
         if key == "idx":
             continue
-        if key in item and key.lower() not in METADATA_DENYLIST:
-            metadata[key] = item[key]
+        if key in source and key.lower() not in METADATA_DENYLIST:
+            metadata[key] = source[key]
     return metadata
 
 
-def _load_input_item(input_json: str | Path, item_index: int) -> tuple[str, str, dict]:
+def _load_input_items(input_json: str | Path) -> list[dict]:
     input_path = _resolve_path(input_json)
-    items = json.loads(input_path.read_text(encoding="utf-8"))
-    if not isinstance(items, list):
-        raise ValueError("--input-json must contain a JSON array")
+    raw_text = input_path.read_text(encoding="utf-8")
+    try:
+        parsed = json.loads(raw_text)
+    except json.JSONDecodeError:
+        parsed = [json.loads(line) for line in raw_text.splitlines() if line.strip()]
+    if not isinstance(parsed, list) or not all(isinstance(item, dict) for item in parsed):
+        raise ValueError("input must be a JSON array or JSONL objects")
+    return parsed
+
+
+def _load_input_item(input_json: str | Path, item_index: int) -> tuple[str, str, dict]:
+    items = _load_input_items(input_json)
     if item_index < 0 or item_index >= len(items):
         raise IndexError(f"--item-index {item_index} is out of range for {len(items)} items")
     item = items[item_index]

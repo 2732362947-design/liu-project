@@ -20,6 +20,8 @@ METADATA_ALLOWLIST = {
     "answer_type",
     "raw_domain",
     "solver_key",
+    "subject",
+    "category",
 }
 
 

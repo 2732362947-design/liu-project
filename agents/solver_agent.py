@@ -2,7 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 
 
-SOLVER_TEMPLATE_DIR = Path(__file__).resolve().parent / "solvers"
+SOLVER_TEMPLATE_DIR = Path(__file__).parent / "solvers"
 VALID_SOLVER_KEYS = {
     "algebra",
     "calculus",
@@ -15,6 +15,15 @@ VALID_SOLVER_KEYS = {
     "linear_algebra",
     "number_theory",
     "optimization",
+    "numerical_analysis",
+    "measure_theory",
+    "differential_geometry",
+    "abstract_algebra",
+    "stochastic_processes",
+    "statistics",
+    "functional_analysis",
+    "linear_regression",
+    "mathematical_analysis",
     "general",
 }
 DOMAIN_TO_SOLVER_KEY = {
@@ -28,6 +37,15 @@ DOMAIN_TO_SOLVER_KEY = {
     "linear_algebra": "linear_algebra",
     "number_theory": "number_theory",
     "optimization": "optimization",
+    "numerical_analysis": "numerical_analysis",
+    "measure_theory": "measure_theory",
+    "differential_geometry": "differential_geometry",
+    "abstract_algebra": "abstract_algebra",
+    "stochastic_processes": "stochastic_processes",
+    "statistics": "statistics",
+    "functional_analysis": "functional_analysis",
+    "linear_regression": "linear_regression",
+    "mathematical_analysis": "mathematical_analysis",
     "real_analysis": "proof",
     "topology": "proof",
     "discrete_math": "discrete",

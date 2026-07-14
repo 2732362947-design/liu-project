@@ -123,6 +123,7 @@ pip install -r requirements-dev.txt
 dev_tools/check_submission_ready.py：提交前自检
 dev_tools/run_user_agent_local.py：模拟官方平台调用 user_agent.py
 dev_tools/run_user_agent_real_smoke.py：用于本地手动验证 user_agent.py 在真实 Intern-S API client 下能跑通；不是官方入口，不用于批量评测
+dev_tools/run_advanced_real_sanity.py：按单并发、每领域一题手动检查高级数学领域路由；不属于自动测试
 dev_tools/convert_omni_math.py：Omni-MATH 本地样本转换
 dev_tools/check_domain_coverage.py：领域覆盖检查
 ```

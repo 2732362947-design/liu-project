@@ -144,6 +144,11 @@ def _extract_proof_conclusion(problem: str, solution: str) -> str | None:
     return best_answer if best_score > 0 else None
 
 
+def _problem_requests_proof(problem: str) -> bool:
+    text = str(problem or "").lower()
+    return any(marker in text for marker in ("证明", "试证", "给出证明", "prove", "show that", "give a proof"))
+
+
 def _extract_quadratic_roots(solution: str) -> str | None:
     if not re.search(r"\bx\s*=\s*2\b", solution) or not re.search(r"\bx\s*=\s*3\b", solution):
         return None
@@ -249,7 +254,7 @@ def extract_final_answer(problem: str, solution: str, domain: str) -> dict:
             "reason": "模型返回为空、错误或 mock 结果，不能抽取正式答案。",
         }
 
-    if domain in {"proof", "real_analysis", "topology"} or "proof" in domain:
+    if domain in {"proof", "real_analysis", "topology"} or "proof" in domain or _problem_requests_proof(problem):
         proof_answer = _extract_proof_conclusion(problem, solution_text)
         if proof_answer:
             return {

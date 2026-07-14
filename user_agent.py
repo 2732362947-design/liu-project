@@ -5,7 +5,7 @@ from typing import Any
 from agents.answer_extractor_agent import extract_final_answer
 import re
 
-from agents.classifier_agent import classify_problem, solver_key_for_domain
+from agents.classifier_agent import classify_problem, domain_from_hint, solver_key_for_domain
 from agents.planner_agent import make_plan
 from agents.solver_agent import build_solver_prompt, normalize_solver_key
 from agents.tools.combinatorics_counting_tool import solve_combinatorics_counting_problem
@@ -290,10 +290,11 @@ def _compose_final_response(
 def _domain_from_metadata(safe_metadata: dict | None) -> str | None:
     if not isinstance(safe_metadata, dict):
         return None
-    domain = str(safe_metadata.get("domain") or "").strip()
-    if not domain or domain.lower() == "unknown":
-        return None
-    return domain
+    for key in ("domain", "subject", "category"):
+        domain = domain_from_hint(safe_metadata.get(key))
+        if domain:
+            return domain
+    return None
 
 
 def _solver_key_from_domain(domain: str | None, solver_key: str | None = None) -> str:
@@ -324,20 +325,14 @@ def _problem_suggests_extremal_discrete(problem: str | None) -> bool:
 
 def _apply_metadata_domain(classification: dict, safe_metadata: dict | None, problem: str | None = None) -> dict:
     updated = dict(classification or {})
+    if str(updated.get("domain") or "unknown") != "unknown":
+        return updated
     domain = _domain_from_metadata(safe_metadata)
     if not domain:
         return updated
-    if domain == "optimization" and _problem_suggests_extremal_discrete(problem):
-        updated["domain"] = "combinatorics"
-        updated["solver_key"] = "discrete"
-        updated["reason"] = "题面是极值集合/组合图论结构，覆盖 metadata optimization 路由。"
-        return updated
-    metadata_solver_key = None
-    if isinstance(safe_metadata, dict) and safe_metadata.get("solver_key"):
-        metadata_solver_key = str(safe_metadata.get("solver_key"))
     updated["domain"] = domain
-    updated["solver_key"] = _solver_key_from_domain(domain, metadata_solver_key)
-    updated["reason"] = "使用安全 metadata.domain 进行领域路由。"
+    updated["solver_key"] = _solver_key_from_domain(domain)
+    updated["reason"] = "题面无明确领域强信号，使用安全 metadata 的弱提示进行领域路由。"
     return updated
 
 
