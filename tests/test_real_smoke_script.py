@@ -41,10 +41,26 @@ def test_real_client_extracts_openai_like_content():
     )
     client = RealInternClient(api_key="secret", session=session)
 
-    result = client.chat(messages=[{"role": "user", "content": "1+1=?"}])
+    result = client.chat(
+        messages=[{"role": "user", "content": "1+1=?"}],
+        thinking_mode=None,
+    )
 
     assert result == "最终答案：2"
     assert session.calls
+    assert "thinking_mode" not in session.calls[0]["kwargs"]["json"]
+
+
+@pytest.mark.parametrize("thinking_mode", [True, False])
+def test_real_client_sends_explicit_thinking_mode(thinking_mode):
+    session = FakeSession(
+        FakeResponse({"choices": [{"message": {"content": "最终答案：2"}}]})
+    )
+    client = RealInternClient(api_key="secret", session=session)
+
+    client.chat(messages=[], thinking_mode=thinking_mode)
+
+    assert session.calls[0]["kwargs"]["json"]["thinking_mode"] is thinking_mode
 
 
 def test_real_client_error_message_redacts_sensitive_markers():
@@ -66,6 +82,34 @@ def test_run_smoke_with_fake_client_returns_result():
     assert result["idx"] == "unit"
     assert result["final_response"]
     assert isinstance(result["trace"], list)
+    assert result["first_thinking_mode_requested"] is False
+    assert result["first_thinking_mode_applied"] is True
+    assert result["retry_thinking_mode_requested"] is None
+    assert result["retry_thinking_mode_applied"] is None
+
+
+def test_run_smoke_reports_retry_thinking_mode_fields():
+    class RetryClient:
+        def __init__(self):
+            self.calls = []
+
+        def chat(self, **kwargs):
+            self.calls.append(kwargs)
+            return (
+                "Thinking Process: PRIVATE"
+                if len(self.calls) == 1
+                else "<final_solution>2</final_solution>"
+            )
+
+    client = RetryClient()
+
+    result = run_smoke(client, problem="Compute 1+1.", idx="retry")
+
+    assert len(client.calls) == 2
+    assert result["first_thinking_mode_requested"] is False
+    assert result["first_thinking_mode_applied"] is True
+    assert result["retry_thinking_mode_requested"] is False
+    assert result["retry_thinking_mode_applied"] is True
 
 
 def test_load_input_json_builds_safe_metadata(tmp_path):

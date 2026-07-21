@@ -1,5 +1,8 @@
+import pytest
+
 from agents.classifier_agent import classify_problem
 from agents import solver_agent
+from user_agent import _apply_metadata_domain
 
 
 def test_classifier_outputs_solver_key_for_probability():
@@ -61,14 +64,14 @@ def test_classifier_routes_optimization():
 def test_classifier_routes_combinatorics_to_discrete():
     result = classify_problem("combinatorics: 从 5 个元素中选法有多少种组合数？")
 
-    assert result["domain"] == "discrete_math"
+    assert result["domain"] == "combinatorics"
     assert result["solver_key"] == "discrete"
 
 
 def test_classifier_routes_graph_theory_to_discrete():
     result = classify_problem("graph_theory: 一个图有多少顶点和边？")
 
-    assert result["domain"] == "discrete_math"
+    assert result["domain"] == "graph_theory"
     assert result["solver_key"] == "discrete"
 
 
@@ -89,6 +92,52 @@ def test_classifier_unknown_falls_back_to_general():
     assert result["solver_key"] == "general"
 
 
+@pytest.mark.parametrize(
+    ("problem", "expected_domain"),
+    [
+        ("Factor a monic irreducible polynomial with integral coefficients.", "algebra"),
+        ("Evaluate the definite integral from 0 to 1.", "calculus"),
+        ("Ten people are standing in a circle with neighbor restrictions.", "combinatorics"),
+        ("A triangle is inscribed in a circle; find the chord length.", "geometry"),
+        ("Find the largest integer that divides P(n) for every integer n.", "number_theory"),
+        ("How many integers are relatively prime to 200?", "number_theory"),
+        ("How many ways are there to color a 4x4 grid?", "combinatorics"),
+        ("Choose two points uniformly at random.", "probability"),
+        ("Compute the expected length of the remaining interval.", "probability"),
+        ("Evaluate the infinite sum of this convergent series.", "calculus"),
+    ],
+)
+def test_scored_router_uses_structural_signals(problem, expected_domain):
+    result = classify_problem(problem)
+
+    assert result["domain"] == expected_domain
+    assert result["routing_confidence"] in {"low", "medium", "high"}
+    assert result["matched_signal_categories"]
+    assert "runner_up_domain" in result
+    assert isinstance(result["score_margin"], int)
+
+
+def test_valid_low_score_signal_returns_top_one_instead_of_unknown():
+    result = classify_problem("Find the coefficient.")
+
+    assert result["domain"] == "algebra"
+    assert result["routing_confidence"] == "low"
+
+
+def test_only_signal_free_problem_routes_unknown():
+    result = classify_problem("State the requested result.")
+
+    assert result["domain"] == "unknown"
+    assert result["routing_confidence"] == "none"
+
+
+@pytest.mark.parametrize("metadata", [{"expected_domain": "geometry"}, {"expected_answer": "42"}, {"solution": "secret"}])
+def test_evaluation_metadata_fields_do_not_influence_routing(metadata):
+    result = _apply_metadata_domain(classify_problem("State the requested result."), metadata)
+
+    assert result["domain"] == "unknown"
+
+
 def test_build_solver_prompt_uses_selected_template():
     prompt = solver_agent.build_solver_prompt(
         "求 x^2 - 5x + 6 = 0 的根。",
@@ -97,8 +146,9 @@ def test_build_solver_prompt_uses_selected_template():
         solver_key="algebra",
     )
 
-    assert "algebra solver" in prompt
-    assert "最终答案" in prompt
+    assert "代数化简" in prompt
+    assert "Provide a concise, self-contained solution" in prompt
+    assert "plan:" not in prompt.lower()
 
 
 def test_build_solver_prompt_loads_new_templates():
@@ -116,8 +166,8 @@ def test_build_solver_prompt_loads_new_templates():
             solver_key=solver_key,
         )
 
-        assert f"{solver_key} solver" in prompt
-        assert "最终答案" in prompt
+        assert "Provide a concise, self-contained solution" in prompt
+        assert "plan:" not in prompt.lower()
 
 
 def test_unknown_solver_key_falls_back_to_general_template():
@@ -128,7 +178,8 @@ def test_unknown_solver_key_falls_back_to_general_template():
         solver_key="missing",
     )
 
-    assert "general solver" in prompt
+    assert "提取条件和目标" in prompt
+    assert "Provide a concise, self-contained solution" in prompt
 
 
 def test_discrete_template_mentions_extremal_graph_modeling():
@@ -139,7 +190,6 @@ def test_discrete_template_mentions_extremal_graph_modeling():
     assert "a+b" in template
     assert "ab" in template
     assert "gcd" in template
-    assert "末尾给出清晰的最终答案" in template
     assert "不要完整列出所有边" in template or "邻接表" in template
     assert "<答案>" not in template
     assert "<单个整数" not in template
@@ -162,4 +212,5 @@ def test_solve_problem_calls_intern_s1_with_routed_prompt(monkeypatch):
     )
 
     assert result == "最终答案：10"
-    assert "discrete solver" in captured["prompt"]
+    assert "组合计数" in captured["prompt"]
+    assert "Provide a concise, self-contained solution" in captured["prompt"]

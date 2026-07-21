@@ -169,7 +169,7 @@ def test_retry_proof_uses_second_full_solution(monkeypatch):
     _assert_response_schema(result)
 
 
-def test_retry_calculation_uses_second_short_answer(monkeypatch):
+def test_generic_verifier_failure_without_dedicated_math_check_keeps_first_answer(monkeypatch):
     calls = {"count": 0}
 
     def fake_verify(*args, **kwargs):
@@ -184,11 +184,12 @@ def test_retry_calculation_uses_second_short_answer(monkeypatch):
         {"answer_type": "number"},
     )
 
-    assert result["final_response"] == "40"
+    assert result["final_response"] == "39"
+    assert len(result["trace"]) > 0
     _assert_response_schema(result)
 
 
-def test_invalid_worked_solution_degrades_to_verified_short_answer(monkeypatch):
+def test_invalid_worked_solution_uses_safe_fallback_even_if_math_verifier_passes(monkeypatch):
     monkeypatch.setattr(
         user_agent,
         "verify_solution",
@@ -196,7 +197,7 @@ def test_invalid_worked_solution_degrades_to_verified_short_answer(monkeypatch):
     )
     result = ReasoningAgent(FakeClient("最终答案：命题成立")).solve("证明该命题。", {})
 
-    assert result["final_response"] == "命题成立"
+    assert result["final_response"] == FALLBACK_RESPONSE
     _assert_response_schema(result)
 
 
@@ -204,7 +205,10 @@ def test_worked_solution_appends_missing_final_conclusion():
     response = _compose_final_response(
         problem="推导所需关系。",
         response_mode=WORKED_SOLUTION,
-        solution="从定义出发逐项展开，再合并同类项即可得到所需关系。",
+        solution=(
+            "第一步，从定义出发逐项展开，得到等式两侧的对应项。\n"
+            "第二步，合并同类项并移项，所需关系随即成立。"
+        ),
         extracted_answer="x=y+1",
         verification={"status": "passed", "severity": "none", "issues": []},
     )

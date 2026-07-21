@@ -1,12 +1,15 @@
 import json
 from types import SimpleNamespace
 
+import pytest
+
 import user_agent
 from user_agent import (
     ReasoningAgent,
     _build_correction_prompt,
     _is_meaningful_final_answer,
     _safe_metadata,
+    _supports_public_kwarg,
 )
 
 
@@ -28,6 +31,39 @@ class ErrorClient:
         raise RuntimeError("network token should not leak")
 
 
+class ExplicitThinkingClient:
+    def __init__(self, responses):
+        self.responses = responses if isinstance(responses, list) else [responses]
+        self.calls = []
+
+    def chat(self, messages, temperature, max_tokens, thinking_mode=None):
+        self.calls.append(
+            {
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "thinking_mode": thinking_mode,
+            }
+        )
+        return self.responses[min(len(self.calls) - 1, len(self.responses) - 1)]
+
+
+class LegacyStrictClient:
+    def __init__(self, responses):
+        self.responses = responses if isinstance(responses, list) else [responses]
+        self.calls = []
+
+    def chat(self, messages, temperature, max_tokens):
+        self.calls.append(
+            {
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            }
+        )
+        return self.responses[min(len(self.calls) - 1, len(self.responses) - 1)]
+
+
 EXTREMAL_SUBSET_PROBLEM = (
     "Find the smallest positive integer K such that every K-element subset of "
     "{1,2,...,50} contains two distinct elements a,b such that a+b divides ab."
@@ -42,6 +78,85 @@ def test_can_import_and_initialize_reasoning_agent():
     agent = ReasoningAgent(client=FakeClient("最终答案：2"))
 
     assert agent.client is not None
+
+
+def test_public_kwarg_support_detection_handles_explicit_kwargs_and_legacy_signatures():
+    assert _supports_public_kwarg(ExplicitThinkingClient("answer").chat, "thinking_mode") is True
+    assert _supports_public_kwarg(FakeClient("answer").chat, "thinking_mode") is True
+    assert _supports_public_kwarg(LegacyStrictClient("answer").chat, "thinking_mode") is False
+    assert _supports_public_kwarg(object(), "thinking_mode") is False
+
+
+@pytest.mark.parametrize("error_type", [TypeError, ValueError])
+def test_public_kwarg_support_detection_handles_uninspectable_callables(monkeypatch, error_type):
+    def raise_signature_error(callable_obj):
+        del callable_obj
+        raise error_type("signature unavailable")
+
+    monkeypatch.setattr(user_agent.inspect, "signature", raise_signature_error)
+
+    assert _supports_public_kwarg(FakeClient("answer").chat, "thinking_mode") is False
+
+
+def test_explicit_thinking_mode_client_receives_first_and_retry_values():
+    client = ExplicitThinkingClient(
+        ["Thinking Process: PRIVATE", "<final_solution>2</final_solution>"]
+    )
+
+    result = ReasoningAgent(client).solve("Compute 1+1.", {})
+
+    assert len(client.calls) == 2
+    assert [call["thinking_mode"] for call in client.calls] == [False, False]
+    model_event = next(item for item in result["trace"] if item["step"] == "model_call")
+    retry_event = next(item for item in result["trace"] if item["step"] == "retry_model_call")
+    assert model_event["thinking_mode_requested"] is False
+    assert model_event["thinking_mode_applied"] is True
+    assert retry_event["thinking_mode_requested"] is False
+    assert retry_event["thinking_mode_applied"] is True
+    assert result["final_response"] != user_agent.FALLBACK_RESPONSE
+
+
+def test_kwargs_client_receives_thinking_mode_without_signature_details_in_trace():
+    client = FakeClient("<final_solution>2</final_solution>")
+
+    result = ReasoningAgent(client).solve("UNIQUE_PROBLEM_SECRET: Compute 1+1.", {})
+
+    assert len(client.calls) == 1
+    assert client.calls[0]["thinking_mode"] is False
+    serialized_trace = json.dumps(result["trace"], ensure_ascii=False)
+    assert "UNIQUE_PROBLEM_SECRET" not in serialized_trace
+    assert "Signature" not in serialized_trace
+    assert "messages" not in serialized_trace
+
+
+def test_legacy_client_uses_one_call_per_attempt_without_compatibility_probe():
+    client = LegacyStrictClient(
+        ["Thinking Process: PRIVATE", "<final_solution>2</final_solution>"]
+    )
+
+    result = ReasoningAgent(client).solve("Compute 1+1.", {})
+
+    assert len(client.calls) == 2
+    assert all("thinking_mode" not in call for call in client.calls)
+    model_event = next(item for item in result["trace"] if item["step"] == "model_call")
+    retry_event = next(item for item in result["trace"] if item["step"] == "retry_model_call")
+    assert model_event["thinking_mode_requested"] is False
+    assert model_event["thinking_mode_applied"] is False
+    assert retry_event["thinking_mode_requested"] is False
+    assert retry_event["thinking_mode_applied"] is False
+    assert result["final_response"] != user_agent.FALLBACK_RESPONSE
+
+
+def test_clean_legacy_client_runs_once_without_thinking_mode():
+    client = LegacyStrictClient("<final_solution>2</final_solution>")
+
+    result = ReasoningAgent(client).solve("Compute 1+1.", {})
+
+    assert len(client.calls) == 1
+    assert "thinking_mode" not in client.calls[0]
+    event = next(item for item in result["trace"] if item["step"] == "model_call")
+    assert event["thinking_mode_requested"] is False
+    assert event["thinking_mode_applied"] is False
 
 
 def test_solve_calls_chat_and_returns_dict_with_trace():
@@ -128,7 +243,7 @@ def test_empty_final_answer_triggers_retry():
     assert "retry_model_call" in _steps(result)
 
 
-def test_verifier_failed_triggers_retry(monkeypatch):
+def test_generic_verifier_failure_without_specific_math_error_does_not_retry(monkeypatch):
     calls = {"count": 0}
 
     def fake_verify(*args, **kwargs):
@@ -142,8 +257,10 @@ def test_verifier_failed_triggers_retry(monkeypatch):
 
     result = ReasoningAgent(client).solve("1+1=?", {})
 
-    assert len(client.calls) == 2
-    assert "2" in result["final_response"]
+    assert len(client.calls) == 1
+    assert result["final_response"] == "1"
+    verify_trace = next(item["content"] for item in result["trace"] if item["step"] == "verify")
+    assert "status=not_applicable" in verify_trace
 
 
 def test_second_attempt_without_answer_falls_back_to_nonempty_response():
@@ -181,7 +298,7 @@ def test_metadata_answer_not_leaked_to_retry_prompt():
     result = ReasoningAgent(client).solve("1+1=?", {"idx": 0, "answer": "999"})
 
     assert len(client.calls) == 2
-    retry_prompt = client.calls[1]["messages"][0]["content"]
+    retry_prompt = client.calls[1]["messages"][1]["content"]
     assert "999" not in retry_prompt
     assert result["final_response"] != "999"
 
@@ -245,7 +362,7 @@ def test_punctuation_fragment_final_answer_triggers_retry():
     assert "26" in result["final_response"]
     assert "retry_model_call" in _steps(result)
     retry_trace = next(item["content"] for item in result["trace"] if item["step"] == "retry_decision")
-    assert "not_meaningful_final_answer" in retry_trace
+    assert "missing_judgeable_solution" in retry_trace
 
 
 def test_two_punctuation_fragment_answers_fall_back():
@@ -270,13 +387,15 @@ def test_placeholder_final_answer_is_not_meaningful():
     assert _is_meaningful_final_answer("then concise reasoning") is False
 
 
-def test_metadata_answer_type_number_overrides_extracted_set():
+def test_problem_inference_not_metadata_marks_extracted_set_as_ambiguous():
     client = FakeClient("最终答案：x = 2, x = 3")
 
     result = ReasoningAgent(client).solve("Find the number.", {"answer_type": "number"})
 
-    assert len(client.calls) == 2
-    assert result["final_response"] == user_agent.FALLBACK_RESPONSE
+    assert len(client.calls) == 1
+    assert result["final_response"] == "x = 2, x = 3"
+    assert result["answer_reliability_status"] == "unverified"
+    assert result["manual_review_required"] is True
     extract_trace = next(item["content"] for item in result["trace"] if item["step"] == "extract")
     verify_trace = next(item["content"] for item in result["trace"] if item["step"] == "verify")
     assert "extracted_answer_type=set" in extract_trace
@@ -284,18 +403,19 @@ def test_metadata_answer_type_number_overrides_extracted_set():
     assert "expected_answer_type=number" in verify_trace
 
 
-def test_retry_still_enforces_metadata_answer_type_number():
+def test_retry_type_mismatch_is_returned_as_unverified_not_failed():
     client = FakeClient(['最终答案：".', "最终答案：x = 2, x = 3"])
 
     result = ReasoningAgent(client).solve("Find the number.", {"answer_type": "number"})
 
     assert len(client.calls) == 2
-    assert result["final_response"] == user_agent.FALLBACK_RESPONSE
+    assert result["final_response"] == "x = 2, x = 3"
+    assert result["answer_reliability_status"] == "unverified"
     retry_extract_trace = next(item["content"] for item in result["trace"] if item["step"] == "retry_extract")
     retry_verify_trace = next(item["content"] for item in result["trace"] if item["step"] == "retry_verify")
     assert "extracted_answer_type=set" in retry_extract_trace
     assert "expected_answer_type=number" in retry_extract_trace
-    assert "status=failed" in retry_verify_trace
+    assert "status=unknown" in retry_verify_trace
     assert "expected_answer_type=number" in retry_verify_trace
 
 
@@ -307,7 +427,7 @@ def test_metadata_answer_type_number_positive_answer_passes_without_retry():
     assert len(client.calls) == 1
     assert result["final_response"] == "26"
     verify_trace = next(item["content"] for item in result["trace"] if item["step"] == "verify")
-    assert "status=passed" in verify_trace
+    assert "status=not_applicable" in verify_trace
     assert "expected_answer_type=number" in verify_trace
 
 
@@ -326,7 +446,7 @@ def test_two_placeholder_number_answers_fall_back():
     assert any("meaningful_final=False" in item["content"] for item in result["trace"] if item["step"] in {"extract", "retry_extract"})
 
 
-def test_retry_uncertain_verification_is_not_finalized(monkeypatch):
+def test_generic_uncertain_verification_is_not_treated_as_math_failure(monkeypatch):
     calls = {"count": 0}
 
     def fake_verify(*args, **kwargs):
@@ -340,11 +460,13 @@ def test_retry_uncertain_verification_is_not_finalized(monkeypatch):
 
     result = ReasoningAgent(client).solve("Find the number.", {"answer_type": "number"})
 
-    assert len(client.calls) == 2
-    assert result["final_response"] == user_agent.FALLBACK_RESPONSE
+    assert len(client.calls) == 1
+    assert result["final_response"] == "1"
+    verify_trace = next(item["content"] for item in result["trace"] if item["step"] == "verify")
+    assert "status=not_applicable" in verify_trace
 
 
-def test_metadata_answer_type_expression_allows_equation_list():
+def test_problem_answer_type_equation_allows_equation_list():
     client = FakeClient("最终答案：x = 2, x = 3")
 
     result = ReasoningAgent(client).solve("Solve the equation.", {"answer_type": "expression"})
@@ -353,7 +475,7 @@ def test_metadata_answer_type_expression_allows_equation_list():
     assert result["final_response"] == "x = 2, x = 3"
     verify_trace = next(item["content"] for item in result["trace"] if item["step"] == "verify")
     assert "status=passed" in verify_trace
-    assert "expected_answer_type=expression" in verify_trace
+    assert "expected_answer_type=equation" in verify_trace
 
 
 def test_optimization_metadata_extremal_subset_routes_to_discrete():
@@ -386,9 +508,9 @@ def test_number_prompt_requires_clear_final_answer_at_end():
         {"answer_type": "number"},
     )
 
-    prompt = client.calls[0]["messages"][0]["content"]
-    assert "请先正确求解" in prompt
-    assert "解答末尾" in prompt
+    prompt = client.calls[0]["messages"][1]["content"]
+    assert "Provide a concise, self-contained solution" in prompt
+    assert "End with one boxed final answer" in prompt
     assert "最终答案：26" not in prompt
     assert "<答案>" not in prompt
     assert "<单个整数" not in prompt
@@ -403,7 +525,7 @@ def test_expression_prompt_requires_expression_not_bare_number():
         {"answer_type": "expression", "domain": "geometry", "solver_key": "geometry"},
     )
 
-    prompt = client.calls[0]["messages"][0]["content"]
+    prompt = client.calls[0]["messages"][1]["content"]
     assert "最终答案必须是表达式" in prompt
     assert "不要用单个数字作为占位答案" in prompt
     assert "适用时请使用题目中的变量" in prompt
@@ -421,7 +543,7 @@ def test_discrete_extremal_prompt_forbids_full_edge_enumeration():
         {"domain": "combinatorics", "answer_type": "number"},
     )
 
-    prompt = client.calls[0]["messages"][0]["content"]
+    prompt = client.calls[0]["messages"][1]["content"]
     assert "不要完整枚举所有边" in prompt
     assert "邻接表" in prompt
     assert "结构分组" in prompt
@@ -435,8 +557,8 @@ def test_model_call_trace_contains_solution_summary():
     model_trace = next(item["content"] for item in result["trace"] if item["step"] == "model_call")
     assert "status=success" in model_trace
     assert "solution_chars=" in model_trace
-    assert "solution_head=" in model_trace
-    assert "solution_tail=" in model_trace
+    assert "solution_head=" not in model_trace
+    assert "solution_tail=" not in model_trace
     assert len(model_trace) < 1400
 
 
@@ -448,15 +570,15 @@ def test_retry_model_call_trace_contains_retry_solution_summary():
     retry_trace = next(item["content"] for item in result["trace"] if item["step"] == "retry_model_call")
     assert "status=success" in retry_trace
     assert "retry_solution_chars=" in retry_trace
-    assert "retry_solution_head=" in retry_trace
-    assert "retry_solution_tail=" in retry_trace
+    assert "retry_solution_head=" not in retry_trace
+    assert "retry_solution_tail=" not in retry_trace
 
 
 def test_extract_trace_contains_final_answer_summary():
     result = ReasoningAgent(FakeClient("最终答案：26")).solve("Find the number.", {"answer_type": "number"})
 
     extract_trace = next(item["content"] for item in result["trace"] if item["step"] == "extract")
-    assert "extracted_final_answer='26'" in extract_trace
+    assert "extracted_final_answer=" not in extract_trace
     assert "extracted_answer_type=number" in extract_trace
     assert "expected_answer_type=number" in extract_trace
     assert "meaningful_final=True" in extract_trace
@@ -467,7 +589,7 @@ def test_correction_prompt_compresses_long_first_solution():
     long_solution = "HEAD" + (" 很长的推理" * 700) + "TAIL"
     prompt = _build_correction_prompt(
         "Find the number.",
-        {"answer": "999", "expected_answer": "888", "solution": "hidden", "answer_type": "number"},
+        {"answer": "999", "expected_answer": "888", "solution": "private-metadata-solution", "answer_type": "number"},
         long_solution,
         "x = 2, x = 3",
         {
@@ -483,20 +605,27 @@ def test_correction_prompt_compresses_long_first_solution():
 
     assert len(prompt) < 3500
     assert len(prompt) < len(long_solution)
-    assert "first_solution_head" in prompt
-    assert "first_solution_tail" in prompt
+    assert "first_solution_head" not in prompt
+    assert "first_solution_tail" not in prompt
+    assert "HEAD" not in prompt
+    assert "TAIL" not in prompt
+    assert "<final_solution>" not in prompt
     assert "999" not in prompt
     assert "888" not in prompt
-    assert "hidden" not in prompt
-    assert "单独的数值" in prompt
-    assert "解答末尾" in prompt
+    assert "private-metadata-solution" not in prompt
+    assert prompt == (
+        "Problem:\nFind the number.\n\n"
+        "Recompute independently. Give at most 8 concise exact steps. "
+        "Do not repeat the conclusion. End once with one boxed final answer."
+    )
+    assert "mathematical_verification_failed" not in prompt
     assert "最终答案：26" not in prompt
     assert "<答案>" not in prompt
     assert "<单个整数" not in prompt
     assert "<单个数值" not in prompt
 
 
-def test_expression_correction_prompt_mentions_type_mismatch():
+def test_expression_correction_prompt_contains_only_problem_and_positive_request():
     prompt = _build_correction_prompt(
         "Find an expression for the length.",
         {"answer_type": "expression"},
@@ -513,12 +642,14 @@ def test_expression_correction_prompt_mentions_type_mismatch():
         expected_answer_type="expression",
     )
 
-    assert "需要 expression 类型" in prompt
-    assert "不要再次返回纯数字" in prompt
-    assert "使用题目中的变量" in prompt
+    assert "Find an expression for the length." in prompt
+    assert "Recompute independently." in prompt
+    assert "Correction:" not in prompt
+    assert "missing_judgeable_solution" not in prompt
+    assert "expression_without_math_markers" not in prompt
 
 
-def test_correction_prompt_for_extremal_subset_says_do_not_continue_listing_edges():
+def test_correction_prompt_for_extremal_subset_does_not_add_extra_instructions():
     prompt = _build_correction_prompt(
         EXTREMAL_SUBSET_PROBLEM,
         {"answer_type": "number"},
@@ -530,9 +661,11 @@ def test_correction_prompt_for_extremal_subset_says_do_not_continue_listing_edge
         expected_answer_type="number",
     )
 
-    assert "不要继续列边" in prompt
-    assert "末尾给出最终答案" in prompt
-    assert "单个整数" in prompt
+    assert EXTREMAL_SUBSET_PROBLEM in prompt
+    assert "Recompute independently." in prompt
+    assert "mathematical_verification_failed" not in prompt
+    assert "不要继续列边" not in prompt
+    assert "单个整数" not in prompt
 
 
 def test_trace_redacts_sensitive_model_output_and_is_json_serializable():

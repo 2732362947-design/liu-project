@@ -81,20 +81,19 @@ def build_solver_prompt(
     retry_context: str | None = None,
     solver_key: str | None = None,
 ) -> str:
-    plan_text = "\n".join(f"{index + 1}. {step}" for index, step in enumerate(plan))
-    retry_block = ""
-    if retry_context:
-        retry_block = (
-            "上一轮问题：\n"
-            f"{retry_context}\n"
-        )
+    del plan, retry_context
     key = normalize_solver_key(solver_key, domain)
     template = load_solver_template(key)
-    return template.format(
+    domain_guidance = template.format(
         domain=domain,
         problem=problem,
-        plan_text=plan_text,
-        retry_block=retry_block,
+        plan_text="",
+        retry_block="",
+    ).strip()
+    return (
+        f"Problem:\n{problem}\n\n"
+        f"{domain_guidance}\n\n"
+        "Provide a concise, self-contained solution with only the mathematical steps necessary for grading."
     )
 
 

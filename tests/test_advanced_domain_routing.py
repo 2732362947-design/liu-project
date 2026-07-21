@@ -154,7 +154,9 @@ def test_every_advanced_domain_has_valid_solver_key_and_template():
         assert solver_key in solver_agent.VALID_SOLVER_KEYS
         assert solver_agent.normalize_solver_key(None, domain) == solver_key
         assert template_path.is_file()
-        assert f"{solver_key} solver" in solver_agent.load_solver_template(solver_key)
+        template = solver_agent.load_solver_template(solver_key)
+        assert template.strip()
+        assert "plan:" not in template.lower()
 
 
 def test_solver_templates_are_loaded_relative_to_solver_module():
@@ -166,19 +168,19 @@ def test_solver_templates_are_loaded_relative_to_solver_module():
     assert "/home/" not in source
 
 
-def test_advanced_templates_contain_shared_scoring_requirements():
+def test_advanced_templates_keep_domain_guidance_and_use_one_shared_output_instruction():
     for solver_key in ADVANCED_DOMAINS:
         template = solver_agent.load_solver_template(solver_key)
+        prompt = solver_agent.build_solver_prompt("测试题。", solver_key, [], solver_key=solver_key)
 
         assert "先识别" in template
         assert "标准" in template and "记号" in template
         assert "必要推导" in template
         assert "条件" in template
-        assert "清晰最终答案" in template
-        assert "可独立判分" in template
         assert "不得伪造" in template
-        assert "metadata.subject" in template
-        assert "无关" in template
+        assert "metadata.subject" not in template
+        assert "plan:" not in template.lower()
+        assert prompt.count("Provide a concise, self-contained solution") == 1
         assert not any(f"最终答案：{digit}" in template for digit in "0123456789")
 
 
@@ -235,11 +237,12 @@ def test_reasoning_agent_uses_subject_only_for_ambiguous_problem():
     client = RecordingClient()
     result = ReasoningAgent(client).solve("研究下列数学结构并判断结论。", {"subject": "Functional Analysis"})
     classify_trace = next(item["content"] for item in result["trace"] if item["step"] == "classify")
-    prompt = client.calls[0]["messages"][0]["content"]
+    prompt = client.calls[0]["messages"][1]["content"]
 
     assert "domain=functional_analysis" in classify_trace
     assert "solver_key=functional_analysis" in classify_trace
-    assert "functional_analysis solver" in prompt
+    assert "Banach/Hilbert" in prompt
+    assert "Provide a concise, self-contained solution" in prompt
 
 
 def test_idx_and_source_do_not_change_routing_or_final_response():

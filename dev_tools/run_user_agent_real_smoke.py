@@ -62,18 +62,22 @@ def safe_text(value: Any, max_chars: int = 500) -> str:
 def extract_content(response_json: Any) -> str:
     if isinstance(response_json, str):
         return response_json
+    if isinstance(response_json, list):
+        return "".join(extract_content(item) for item in response_json)
     if isinstance(response_json, dict):
-        if response_json.get("content") is not None:
-            return str(response_json["content"])
+        if "reasoning" in str(response_json.get("type") or "").lower():
+            return ""
+        if "content" in response_json:
+            return extract_content(response_json.get("content") or "")
+        if response_json.get("text") is not None:
+            return str(response_json["text"])
         choices = response_json.get("choices")
         if isinstance(choices, list) and choices:
-            choice = choices[0]
-            if isinstance(choice, dict):
-                message = choice.get("message")
-                if isinstance(message, dict) and message.get("content") is not None:
-                    return str(message["content"])
-                if choice.get("content") is not None:
-                    return str(choice["content"])
+            return extract_content(choices[0])
+        if response_json.get("message") is not None:
+            return extract_content(response_json["message"])
+        if "reasoning_content" in response_json:
+            return ""
     return str(response_json or "")
 
 
@@ -92,7 +96,13 @@ class RealInternClient:
         self.timeout = timeout
         self.session = session or requests.Session()
 
-    def chat(self, messages, temperature=0.2, max_tokens=4096):
+    def chat(
+        self,
+        messages,
+        temperature=0.2,
+        max_tokens=4096,
+        thinking_mode=None,
+    ):
         url = f"{self.base_url}/chat/completions"
         headers = {
             "Content-Type": "application/json",
@@ -104,6 +114,8 @@ class RealInternClient:
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
+        if thinking_mode is not None:
+            payload["thinking_mode"] = bool(thinking_mode)
         try:
             response = self.session.post(
                 url,
@@ -167,11 +179,23 @@ def run_smoke(client, problem: str = DEFAULT_PROBLEM, idx: str = DEFAULT_IDX, me
     result = agent.solve(problem, solve_metadata)
     trace = result.get("trace", []) if isinstance(result, dict) else []
     retry_used = any(item.get("step") == "retry_model_call" for item in trace if isinstance(item, dict))
+    model_call = next(
+        (item for item in trace if isinstance(item, dict) and item.get("step") == "model_call"),
+        {},
+    )
+    retry_model_call = next(
+        (item for item in trace if isinstance(item, dict) and item.get("step") == "retry_model_call"),
+        {},
+    )
     return {
         "idx": idx,
         "final_response": str(result.get("final_response", "")) if isinstance(result, dict) else "",
         "trace": trace if isinstance(trace, list) else [],
         "retry_used": retry_used,
+        "first_thinking_mode_requested": model_call.get("thinking_mode_requested"),
+        "first_thinking_mode_applied": model_call.get("thinking_mode_applied"),
+        "retry_thinking_mode_requested": retry_model_call.get("thinking_mode_requested"),
+        "retry_thinking_mode_applied": retry_model_call.get("thinking_mode_applied"),
         "time_cost_seconds": round(time.perf_counter() - started, 6),
     }
 

@@ -1,12 +1,6 @@
-你是 Intern-S1 数学解题模型，当前使用 discrete solver。
-domain: {domain}
-题目: {problem}
-plan:
-{plan_text}
-{retry_block}
 请优先识别组合计数、图论、逻辑命题或离散结构，并给出清晰结论。
 遇到 every K-element subset、K-element subset、contains two distinct elements、pair、subset of {{1,2,...,n}}、smallest K、maximum subset avoiding property、divides、coloring、tournament、graph、independent set 等关键词时，优先使用“组合极值 / 图建模”策略：
-1. 必须先完成必要证明，再在末尾给出清晰的最终答案；不要输出占位符文本。
+1. 先建立结构模型，再给出下界构造和上界证明。
 2. 对“任意 K 元子集必含某种二元组”的题，构造图 G，顶点为全集元素。
 3. 满足目标性质的二元组连边；不含目标二元组的子集就是独立集。
 4. 问最小 K 使任意 K 元子集含边，等价于 K = alpha(G) + 1，其中 alpha(G) 是最大独立集大小。
@@ -23,4 +17,3 @@ plan:
 对 smallest positive integer K 这类题，最终答案应是单个整数 K，不要输出变量解集、多个候选答案或标点残片。
 推理最后必须收束到 K = alpha + 1，并说明 alpha 的下界构造和上界证明。
 给出必要推理，不要写冗长教学解释。
-输出中必须包含明确模式“最终答案：”后接本题的实际结果。不要输出占位符文本。

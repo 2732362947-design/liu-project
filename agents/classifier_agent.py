@@ -336,125 +336,486 @@ def _looks_like_extremal_discrete_problem(text: str) -> bool:
     return any(marker in text for marker in subset_markers) and any(marker in text for marker in structure_markers)
 
 
+ROUTING_PRIORITY = (
+    *ADVANCED_DOMAINS,
+    "number_theory",
+    "combinatorics",
+    "probability",
+    "graph_theory",
+    "algebra",
+    "geometry",
+    "calculus",
+    "linear_algebra",
+    "complex_analysis",
+    "ode_pde",
+    "optimization",
+    "real_analysis",
+    "topology",
+    "proof",
+    "discrete_math",
+)
+
+
+def _score_signal(
+    scores: dict[str, int],
+    categories: dict[str, set[str]],
+    domain: str,
+    category: str,
+    weight: int,
+    condition: bool,
+) -> None:
+    if not condition:
+        return
+    scores[domain] += weight
+    categories[domain].add(category)
+
+
+def _phrase(text: str, *markers: str) -> bool:
+    return any(marker in text for marker in markers)
+
+
+def _word(text: str, *markers: str) -> bool:
+    return any(re.search(rf"\b{re.escape(marker)}\b", text) for marker in markers)
+
+
 def classify_problem(problem: str) -> dict:
     text = str(problem or "").lower()
+    scores = {domain: 0 for domain in ROUTING_PRIORITY}
+    categories = {domain: set() for domain in ROUTING_PRIORITY}
+
     advanced = _advanced_domain_from_text(text)
     if advanced is not None:
-        domain, reason = advanced
-    elif any(token in text for token in ("probability", "概率", "随机", "骰子", "硬币", "红球", "蓝球")):
-        domain = "probability"
-        reason = "题目涉及随机试验或概率计算。"
-    elif _looks_like_extremal_discrete_problem(text):
-        domain = "combinatorics"
-        reason = "题目是极值集合、组合图论或离散结构问题。"
-    elif any(token in text for token in ("pde", "ode", "ordinary differential equation", "热方程", "偏微分", "微分方程", "u_t", "u_xx")):
-        domain = "ode_pde"
-        reason = "题目涉及常微分方程或偏微分方程。"
-    elif any(token in text for token in ("combinatorics", "组合", "选法", "排列", "组合数")):
-        domain = "discrete_math"
-        reason = "题目涉及组合计数或排列组合。"
-    elif any(token in text for token in ("graph_theory", "图论", "顶点", "图的边", "vertices and edges")):
-        domain = "discrete_math"
-        reason = "题目涉及图论或离散结构。"
-    elif any(token in text for token in ("discrete", "离散", "命题", "逆否")):
-        domain = "discrete_math"
-        reason = "题目涉及离散数学、逻辑或组合计数。"
-    elif any(token in text for token in ("triangle", "circle", "geometry", "三角形", "圆", "几何", "面积", "角")):
-        domain = "geometry"
-        reason = "题目包含几何对象或空间关系。"
-    elif any(
-        token in text
-        for token in ("complex_analysis", "complex", "复分析", "复数", "留数", "解析函数", "cauchy", "laurent", "解析")
-    ):
-        domain = "complex_analysis"
-        reason = "题目涉及复数或复分析术语。"
-    elif any(token in text for token in ("prove", "proof", "证明", "得证")):
-        domain = "proof"
-        reason = "题目要求证明命题。"
-    elif any(token in text for token in ("limit", "derivative", "integral", "极限", "导数", "积分", "微分")):
-        domain = "calculus"
-        reason = "题目涉及极限、导数、积分或微积分概念。"
-    elif any(
-        token in text
-        for token in (
-            "linear_algebra",
-            "linear algebra",
-            "线性代数",
-            "矩阵",
-            "matrix",
-            "行列式",
-            "determinant",
-            "特征值",
-            "eigenvalue",
-            "向量空间",
-            "vector space",
-            "秩",
-        )
-    ):
-        domain = "linear_algebra"
-        reason = "题目涉及矩阵、线性空间或线性代数计算。"
-    elif any(
-        token in text
-        for token in (
-            "number_theory",
-            "数论",
-            "素数",
-            "同余",
-            "gcd",
-            "最大公约数",
-            "整除",
-            "multiplicative order",
-            "modulo",
-        )
-    ):
-        domain = "number_theory"
-        reason = "题目涉及数论、整除、同余或素数。"
-    elif any(
-        token in text
-        for token in (
-            "linear programming",
-            "objective function",
-            "subject to",
-            "optimization",
-            "operations_research",
-            "optimize",
-            "minimize",
-            "maximize",
-            "运筹",
-            "线性规划",
-            "最优化",
-            "约束优化",
-            "优化目标",
-        )
-    ):
-        domain = "optimization"
-        reason = "题目包含目标函数、约束或明确的最优化强信号。"
-    elif any(token in text for token in ("equation", "solve", "方程", "二次", "代数", "x^2")):
-        domain = "algebra"
-        reason = "题目主要是方程求解或代数运算。"
-    elif any(
-        token in text
-        for token in (
-            "optimization",
-            "operations_research",
-            "optimize",
-            "maximum",
-            "minimum",
-            "运筹",
-            "线性规划",
-            "最优化",
-            "约束优化",
-            "最值",
-            "优化",
-        )
-    ):
-        domain = "optimization"
-        reason = "题目关注最优化或极值。"
-    elif any(token in text for token in ("topology", "拓扑", "连续映射")):
-        domain = "topology"
-        reason = "题目涉及拓扑相关概念。"
-    else:
-        domain = "unknown"
-        reason = "题目缺少足够明显的领域关键词。"
+        _score_signal(scores, categories, advanced[0], "advanced_structure", 20, True)
 
-    return {"domain": domain, "solver_key": solver_key_for_domain(domain), "reason": reason}
+    # Explicit labels remain strong, but are combined with all other evidence.
+    explicit_markers = {
+        "calculus": ("calculus", "微积分"),
+        "algebra": ("algebra", "代数"),
+        "geometry": ("geometry", "几何"),
+        "probability": ("probability", "概率"),
+        "number_theory": ("number_theory", "number theory", "数论"),
+        "combinatorics": ("combinatorics", "组合数学"),
+        "graph_theory": ("graph_theory", "graph theory", "图论"),
+        "linear_algebra": ("linear_algebra", "linear algebra", "线性代数"),
+        "complex_analysis": ("complex_analysis", "complex analysis", "复分析"),
+        "optimization": ("optimization", "operations_research", "最优化", "运筹"),
+        "topology": ("topology", "拓扑"),
+        "discrete_math": ("discrete_math", "discrete mathematics", "离散数学"),
+    }
+    for signal_domain, markers in explicit_markers.items():
+        _score_signal(scores, categories, signal_domain, "explicit_domain", 8, _phrase(text, *markers))
+
+    _score_signal(
+        scores,
+        categories,
+        "ode_pde",
+        "differential_equation_structure",
+        7,
+        _phrase(
+            text,
+            "ordinary differential equation",
+            "partial differential equation",
+            "微分方程",
+            "偏微分",
+            "热方程",
+            "u_t",
+            "u_xx",
+        )
+        or _word(text, "ode", "pde"),
+    )
+    _score_signal(
+        scores,
+        categories,
+        "complex_analysis",
+        "complex_structure",
+        5,
+        _phrase(text, "复数", "留数", "解析函数", "cauchy", "laurent") or _word(text, "complex"),
+    )
+    _score_signal(
+        scores,
+        categories,
+        "linear_algebra",
+        "linear_algebra_structure",
+        5,
+        _phrase(
+            text,
+            "matrix",
+            "矩阵",
+            "determinant",
+            "行列式",
+            "eigenvalue",
+            "特征值",
+            "vector space",
+            "向量空间",
+        )
+        or _word(text, "rank"),
+    )
+
+    integral_coefficient_context = _phrase(
+        text,
+        "integral coefficients",
+        "integer coefficients",
+        "integral polynomial",
+        "integer polynomial",
+    )
+    polynomial_context = _phrase(text, "polynomial", "多项式")
+    _score_signal(
+        scores,
+        categories,
+        "algebra",
+        "polynomial_structure",
+        6,
+        _phrase(
+            text,
+            "monic irreducible polynomial",
+            "polynomial factorization",
+            "integral coefficients",
+            "integer coefficients",
+            "functional equation",
+            "system of equations",
+        ),
+    )
+    _score_signal(scores, categories, "algebra", "polynomial", 4, polynomial_context)
+    _score_signal(
+        scores,
+        categories,
+        "algebra",
+        "algebraic_form",
+        3,
+        _phrase(
+            text,
+            "rational expression",
+            "coefficient",
+            "factorization",
+            "factorisation",
+            "floor function",
+            "algebraic expression",
+            "integer-coordinate",
+            "coordinates that are both integers",
+        )
+        or _phrase(text, r"\lfloor"),
+    )
+    _score_signal(
+        scores,
+        categories,
+        "algebra",
+        "equation_target",
+        3,
+        _phrase(text, "solve for", "system of equations", "what is the value of")
+        or _word(text, "equation", "solve"),
+    )
+    _score_signal(
+        scores,
+        categories,
+        "algebra",
+        "sequence_structure",
+        4,
+        _phrase(text, "sequence with an algebraic pattern", "following sequence", "let $a_n", "\\left(a_{n}\\right)"),
+    )
+    _score_signal(
+        scores,
+        categories,
+        "algebra",
+        "algebraic_extremum",
+        4,
+        _phrase(text, "minimum of an algebraic expression", "maximum of an algebraic expression", "maximum possible value", "smallest possible value"),
+    )
+
+    _score_signal(
+        scores,
+        categories,
+        "number_theory",
+        "divisibility_structure",
+        6,
+        _phrase(
+            text,
+            "largest integer that divides",
+            "largest positive integer that divides",
+            "greatest common divisor",
+            "relatively prime",
+            "integer-valued polynomial",
+            "p-adic valuation",
+        )
+        or _phrase(text, r"\gcd", r"\pmod", r"\nu_p"),
+    )
+    _score_signal(
+        scores,
+        categories,
+        "number_theory",
+        "arithmetic_structure",
+        4,
+        _phrase(
+            text,
+            "divisible",
+            "prime factor",
+            "not necessarily distinct prime numbers",
+            "coprime",
+            "lowest terms",
+            "repeating decimal",
+            "repeats consecutively",
+            "squarefree",
+            "digit sum",
+            "sum of the digits",
+            "base representation",
+            "multiplicative order",
+        )
+        or _word(text, "gcd", "remainder", "congruence", "modulo"),
+    )
+    _score_signal(
+        scores,
+        categories,
+        "number_theory",
+        "divides_relation",
+        3,
+        _word(text, "divides", "divisible") or _phrase(text, r"\mid", r"\nmid"),
+    )
+
+    arrangement_context = (
+        _word(text, "permutation", "permutations", "arrangement", "arrangements", "subset", "select", "choose")
+        or _phrase(text, "combination", "组合", "选法", "排列", "number of arrangements")
+    )
+    factorial_floor_value_context = (
+        ("!" in text or _phrase(text, "factorial"))
+        and (_phrase(text, "floor", "greatest integer", r"\lfloor", "ceiling") or r"\lceil" in text)
+        and _phrase(text, "find the value", "compute the value", "evaluate", "determine the value")
+        and not arrangement_context
+    )
+    _score_signal(
+        scores,
+        categories,
+        "number_theory",
+        "factorial_floor_value",
+        8,
+        factorial_floor_value_context,
+    )
+
+    _score_signal(
+        scores,
+        categories,
+        "combinatorics",
+        "counting_target",
+        5,
+        _phrase(
+            text,
+            "how many ways",
+            "number of ways",
+            "count arrangements",
+            "count positive integers satisfying",
+            "standing around a circle",
+            "standing in a circle",
+            "arranged in a circle",
+            "consecutive integer representations",
+        ),
+    )
+    _score_signal(
+        scores,
+        categories,
+        "combinatorics",
+        "discrete_structure",
+        4,
+        _looks_like_extremal_discrete_problem(text)
+        or _phrase(
+            text,
+            "color a grid",
+            "color a window",
+            "color a lattice",
+            "neighbor restrictions",
+            "inclusion-exclusion",
+            "pigeonhole",
+        ),
+    )
+    _score_signal(
+        scores,
+        categories,
+        "combinatorics",
+        "arrangement_structure",
+        3,
+        arrangement_context,
+    )
+    _score_signal(scores, categories, "combinatorics", "generic_count", 2, _phrase(text, "how many", "find the number of ways"))
+
+    random_context = _phrase(
+        text,
+        "uniformly at random",
+        "at random",
+        "independently",
+        "random process",
+        "randomly",
+        "随机",
+    )
+    _score_signal(scores, categories, "probability", "random_structure", 6, random_context)
+    _score_signal(
+        scores,
+        categories,
+        "probability",
+        "expectation_target",
+        5,
+        _phrase(
+            text,
+            "expected length",
+            "expected value",
+            "average value",
+            "average over all equally likely",
+            "probability of winning",
+        ),
+    )
+    _score_signal(
+        scores,
+        categories,
+        "probability",
+        "probability_term",
+        4,
+        _word(text, "probability", "distribution", "variance") or _phrase(text, "概率", "骰子", "硬币", "红球", "蓝球"),
+    )
+
+    circle_arrangement = _phrase(text, "standing in a circle", "standing around a circle", "arranged in a circle")
+    geometry_context = _phrase(
+        text,
+        "parallelogram",
+        "angle bisector",
+        "triangle",
+        "octahedron",
+        "icosahedron",
+        "inscribed",
+        "tangent",
+        "radius",
+        "diameter",
+        "chord",
+        "side length",
+        "central angle",
+        "ratio of geometric segments",
+        "三角形",
+        "平行四边形",
+        "内切",
+        "外接",
+        "半径",
+        "切线",
+        "弦",
+        "面积",
+    )
+    _score_signal(scores, categories, "geometry", "geometric_structure", 5, geometry_context)
+    _score_signal(
+        scores,
+        categories,
+        "geometry",
+        "circle_with_geometry_context",
+        3,
+        not circle_arrangement and _word(text, "circle") and geometry_context,
+    )
+
+    _score_signal(
+        scores,
+        categories,
+        "graph_theory",
+        "graph_structure",
+        5,
+        _word(text, "vertices", "graph", "tree", "bipartite")
+        or (_word(text, "edges", "degree", "cycle", "path") and _word(text, "graph", "vertices"))
+        or _phrase(text, "independent set", "pairwise incompatible", "adjacency restrictions"),
+    )
+    _score_signal(
+        scores,
+        categories,
+        "graph_theory",
+        "implicit_incompatibility_graph",
+        8,
+        _phrase(text, "lattice points") and _phrase(text, "no two", "any two") and _phrase(text, "integer distance", "not an integer"),
+    )
+
+    _score_signal(
+        scores,
+        categories,
+        "calculus",
+        "calculus_structure",
+        6,
+        _phrase(
+            text,
+            "definite integral",
+            "indefinite integral",
+            "antiderivative",
+            "infinite series",
+            "infinite sum",
+        )
+        or _phrase(text, r"\int"),
+    )
+    _score_signal(
+        scores,
+        categories,
+        "calculus",
+        "calculus_operation",
+        4,
+        _word(text, "integrate", "derivative", "differentiate", "convergence")
+        or _phrase(text, "导数", "积分", "极限"),
+    )
+    _score_signal(
+        scores,
+        categories,
+        "calculus",
+        "limit_operation",
+        3,
+        _word(text, "limit") or _phrase(text, r"\lim", r"^{\infty}", r"_\infty"),
+    )
+
+    _score_signal(
+        scores,
+        categories,
+        "optimization",
+        "optimization_structure",
+        6,
+        _phrase(text, "linear programming", "objective function", "subject to", "约束优化", "优化目标", "线性规划"),
+    )
+    _score_signal(
+        scores,
+        categories,
+        "optimization",
+        "optimization_target",
+        3,
+        _word(text, "optimize", "minimize", "maximize") or _phrase(text, "最值", "优化"),
+    )
+    _score_signal(scores, categories, "proof", "proof_target", 3, _word(text, "prove", "proof") or _phrase(text, "证明", "得证"))
+    _score_signal(scores, categories, "topology", "topology_structure", 5, _phrase(text, "continuous map", "连续映射"))
+    _score_signal(scores, categories, "discrete_math", "logic_structure", 4, _phrase(text, "命题", "逆否", "discrete logic"))
+
+    # Exclusion and conflict contexts prevent known lexical false positives.
+    _score_signal(scores, categories, "calculus", "excluded_integral_coefficient_context", -5, integral_coefficient_context)
+    _score_signal(scores, categories, "geometry", "excluded_circle_arrangement_context", -4, circle_arrangement)
+    _score_signal(
+        scores,
+        categories,
+        "number_theory",
+        "polynomial_prime_factor_conflict",
+        -2,
+        polynomial_context and _phrase(text, "prime factorization", "prime factors"),
+    )
+    pure_counting_target = _phrase(text, "number of ways", "how many ways", "number of permutations", "count arrangements")
+    _score_signal(scores, categories, "probability", "pure_counting_conflict", -2, pure_counting_target and not random_context)
+
+    ordered = sorted(scores, key=lambda candidate: (-scores[candidate], ROUTING_PRIORITY.index(candidate)))
+    top_domain = ordered[0]
+    runner_up_domain = ordered[1]
+    top_score = scores[top_domain]
+    runner_up_score = scores[runner_up_domain]
+    score_margin = top_score - runner_up_score
+    if top_score <= 0:
+        domain = "unknown"
+        confidence = "none"
+        matched_categories: list[str] = []
+        runner_up = None
+        score_margin = 0
+        reason = "题面没有有效的领域结构信号。"
+    else:
+        domain = top_domain
+        confidence = "high" if top_score >= 6 and score_margin >= 3 else "medium" if top_score >= 4 and score_margin >= 2 else "low"
+        matched_categories = sorted(categories[top_domain])
+        runner_up = runner_up_domain if runner_up_score > 0 else None
+        reason = "基于题面结构、目标词与冲突上下文的加权领域路由。"
+
+    return {
+        "domain": domain,
+        "solver_key": solver_key_for_domain(domain),
+        "reason": reason,
+        "routing_confidence": confidence,
+        "matched_signal_categories": matched_categories,
+        "runner_up_domain": runner_up,
+        "score_margin": score_margin,
+    }

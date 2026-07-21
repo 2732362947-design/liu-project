@@ -80,7 +80,7 @@ def test_build_metadata_prefers_nested_metadata():
     }
 
 
-def test_run_one_passes_nested_expression_metadata_to_agent():
+def test_run_one_ignores_nested_expression_metadata_for_answer_type():
     agent = ReasoningAgent(FakeClient("最终答案：x=2"))
     item = {
         "idx": "omni_000002",
@@ -98,7 +98,7 @@ def test_run_one_passes_nested_expression_metadata_to_agent():
     assert result["status"] == "success"
     assert result["final_response"] == "x=2"
     assert "domain=geometry" in _trace_content(result, "classify")
-    assert "expected_answer_type=expression" in _trace_content(result, "verify")
+    assert "expected_answer_type=unknown" in _trace_content(result, "verify")
 
 
 def test_default_fake_client_returns_expression_for_expression_metadata():
@@ -117,7 +117,7 @@ def test_default_fake_client_returns_expression_for_expression_metadata():
     assert "expected_answer_type=expression" in _trace_content(result, "verify")
 
 
-def test_run_one_passes_legacy_top_level_expression_metadata_to_agent():
+def test_run_one_ignores_legacy_top_level_expression_metadata_for_answer_type():
     agent = ReasoningAgent(FakeClient("最终答案：x=2"))
     item = {
         "idx": "omni_000002",
@@ -132,10 +132,10 @@ def test_run_one_passes_legacy_top_level_expression_metadata_to_agent():
     assert result["status"] == "success"
     assert result["final_response"] == "x=2"
     assert "domain=geometry" in _trace_content(result, "classify")
-    assert "expected_answer_type=expression" in _trace_content(result, "verify")
+    assert "expected_answer_type=unknown" in _trace_content(result, "verify")
 
 
-def test_run_one_passes_number_metadata_to_agent():
+def test_run_one_ignores_number_metadata_for_answer_type():
     agent = ReasoningAgent(FakeClient("最终答案：2"))
     item = {
         "idx": "n1",
@@ -147,10 +147,10 @@ def test_run_one_passes_number_metadata_to_agent():
 
     assert result["status"] == "success"
     assert result["final_response"] == "2"
-    assert "expected_answer_type=number" in _trace_content(result, "verify")
+    assert "expected_answer_type=unknown" in _trace_content(result, "verify")
 
 
-def test_default_fake_client_returns_number_for_number_metadata():
+def test_default_fake_client_answer_does_not_make_metadata_a_routing_input():
     agent = ReasoningAgent(FakeClient())
     item = {
         "idx": "n1",
@@ -162,7 +162,7 @@ def test_default_fake_client_returns_number_for_number_metadata():
 
     assert result["status"] == "success"
     assert result["final_response"] == "2"
-    assert "expected_answer_type=number" in _trace_content(result, "verify")
+    assert "expected_answer_type=unknown" in _trace_content(result, "verify")
 
 
 def test_local_fake_client_markers_do_not_enter_user_agent_entrypoint():
