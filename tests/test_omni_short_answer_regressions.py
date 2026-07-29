@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
 import user_agent
 from agents.classifier_agent import classify_problem
 from dev_tools.run_omni_real_api_eval import evaluate_item
@@ -24,15 +21,15 @@ from user_agent import (
 )
 
 
-DATASET = Path(__file__).resolve().parents[1] / "evaluation/datasets/omni_math_smoke_30.jsonl"
-
-
-def _dataset_item(idx: str) -> dict:
-    return next(
-        json.loads(line)
-        for line in DATASET.read_text(encoding="utf-8").splitlines()
-        if json.loads(line)["idx"] == idx
-    )
+FACTORIAL_FLOOR_PROBLEM = (
+    r"Find the value of "
+    r"\(\left\lfloor\frac{2002!}{2001!+2000!+\cdots+1!}\right\rfloor\)."
+)
+POLYNOMIAL_FACTOR_COUNT_PROBLEM = (
+    "A polynomial over a finite field has a factorization into monic irreducible "
+    "polynomials. How many monic irreducible polynomial factors occur, counted "
+    "with multiplicity?"
+)
 
 
 class FakeClient:
@@ -70,11 +67,11 @@ def _proof_with_risk() -> str:
 
 
 def test_how_many_polynomial_factors_infers_number():
-    assert _expected_answer_type_from_problem(_dataset_item("omni_eval_000934")["problem"]) == "number"
+    assert _expected_answer_type_from_problem(POLYNOMIAL_FACTOR_COUNT_PROBLEM) == "number"
 
 
 def test_find_floor_factorial_value_infers_number():
-    assert _expected_answer_type_from_problem(_dataset_item("omni_eval_000817")["problem"]) == "number"
+    assert _expected_answer_type_from_problem(FACTORIAL_FLOOR_PROBLEM) == "number"
 
 
 def test_explicit_factor_polynomial_infers_expression():
@@ -127,7 +124,7 @@ def test_answer_type_mismatch_is_unknown_not_failed():
 
 
 def test_factorial_floor_2000_passes_with_diagnostics():
-    result = _verify_factorial_floor_exact(_dataset_item("omni_eval_000817")["problem"], "2000")
+    result = _verify_factorial_floor_exact(FACTORIAL_FLOOR_PROBLEM, "2000")
     assert result["status"] == VERIFICATION_PASSED
     assert result["verifier_name"] == "factorial_floor_exact"
     assert result["computed_value_summary"] == "integer:2000"
@@ -135,7 +132,7 @@ def test_factorial_floor_2000_passes_with_diagnostics():
 
 
 def test_factorial_floor_2001_fails_with_located_mismatch():
-    result = _verify_factorial_floor_exact(_dataset_item("omni_eval_000817")["problem"], "2001")
+    result = _verify_factorial_floor_exact(FACTORIAL_FLOOR_PROBLEM, "2001")
     assert result["status"] == VERIFICATION_FAILED
     assert result["subreason"] == "floor_value_mismatch"
     assert result["problem_parse_status"] == VERIFICATION_PASSED
@@ -143,9 +140,8 @@ def test_factorial_floor_2001_fails_with_located_mismatch():
 
 
 def test_polynomial_factor_count_five_is_accepted_without_retry():
-    item = _dataset_item("omni_eval_000934")
     client = FakeClient(_tagged(r"The factor multiplicities total 2+1+1+1=5. Hence \boxed{5}."))
-    result = ReasoningAgent(client).solve(item["problem"], {})
+    result = ReasoningAgent(client).solve(POLYNOMIAL_FACTOR_COUNT_PROBLEM, {})
     verify = next(event["content"] for event in result["trace"] if event["step"] == "verify")
     assert len(client.calls) == 1
     assert result["final_response"] == "5"
@@ -156,9 +152,8 @@ def test_polynomial_factor_count_five_is_accepted_without_retry():
 
 
 def test_factorial_floor_wrong_candidate_retries_then_uses_exact_override():
-    item = _dataset_item("omni_eval_000817")
     client = FakeClient([_tagged(r"Thus \boxed{2001}."), _tagged(r"Again \boxed{2001}.")])
-    result = ReasoningAgent(client).solve(item["problem"], {})
+    result = ReasoningAgent(client).solve(FACTORIAL_FLOOR_PROBLEM, {})
     assert len(client.calls) == 2
     assert result["final_response"] == "2000"
     assert result["deterministic_answer_override"] is True
@@ -215,7 +210,7 @@ def test_retry_prompt_omits_old_answer_expected_answer_and_metadata():
 
 
 def test_factorial_floor_routes_to_compatible_number_theory_solver():
-    route = classify_problem(_dataset_item("omni_eval_000817")["problem"])
+    route = classify_problem(FACTORIAL_FLOOR_PROBLEM)
     assert route["domain"] in {"number_theory", "algebra"}
     assert route["solver_key"] in {"number_theory", "algebra"}
     assert "factorial_floor_value" in route["matched_signal_categories"]

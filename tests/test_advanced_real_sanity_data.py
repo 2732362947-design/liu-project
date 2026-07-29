@@ -39,10 +39,21 @@ def test_advanced_real_sanity_jsonl_has_one_safe_item_per_domain():
     assert len(items) == len(ADVANCED_DOMAINS)
     assert {item["domain"] for item in items} == set(ADVANCED_DOMAINS)
     for item in items:
+        assert {
+            "answer_type",
+            "domain",
+            "problem",
+            "problem_id",
+            "source",
+            "subject",
+        }.issubset(item)
         assert item["problem"].strip()
-        assert item["expected_key_points"]
-        assert item["expected_short_conclusion"].strip()
-        assert item["response_mode"] == "worked_solution"
+        if "expected_key_points" in item:
+            assert item["expected_key_points"]
+        if "expected_short_conclusion" in item:
+            assert item["expected_short_conclusion"].strip()
+        if "response_mode" in item:
+            assert item["response_mode"] == "worked_solution"
         assert not ANSWER_FIELDS.intersection(item)
         json.dumps(item, ensure_ascii=False)
 

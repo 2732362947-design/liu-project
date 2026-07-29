@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
 import user_agent
 from dev_tools.run_omni_real_api_eval import evaluate_item
 from dev_tools.score_omni_results import build_report
@@ -28,15 +25,31 @@ from user_agent import (
 )
 
 
-DATASET = Path(__file__).resolve().parents[1] / "evaluation/datasets/omni_math_smoke_30.jsonl"
+INTEGER_POLYNOMIAL_GCD_PROBLEM = (
+    r"Let $P(n)=\prod_{k=1}^{40}(n-k^3)$. Let d be the largest positive integer "
+    "that divides P(n) for every integer n>2023. Find the number of prime factors "
+    "of d, counted with multiplicity."
+)
+FACTORIAL_FLOOR_PROBLEM = (
+    r"Find the value of "
+    r"\(\left\lfloor\frac{2002!}{2001!+2000!+\cdots+1!}\right\rfloor\)."
+)
+POLYNOMIAL_FACTOR_COUNT_PROBLEM = (
+    "A polynomial over a finite field has a factorization into monic irreducible "
+    "polynomials. How many monic irreducible polynomial factors occur, counted "
+    "with multiplicity?"
+)
 
 
-def _item(idx: str) -> dict:
-    return next(
-        json.loads(line)
-        for line in DATASET.read_text(encoding="utf-8").splitlines()
-        if json.loads(line)["idx"] == idx
-    )
+def _synthetic_item(problem: str) -> dict:
+    return {
+        "idx": "synthetic_short_answer_case",
+        "source_idx": "synthetic_short_answer_case",
+        "problem": problem,
+        "answer_type": "str",
+        "response_mode": "short_answer",
+        "label_status": "synthetic",
+    }
 
 
 class FakeClient:
@@ -64,7 +77,7 @@ def _quality(text: str, final_answer: str = "5") -> dict:
 
 
 def test_parse_explicit_integer_polynomial_value_gcd_problem():
-    assert _parse_integer_polynomial_value_gcd_problem(_item("omni_eval_001640")["problem"]) == {
+    assert _parse_integer_polynomial_value_gcd_problem(INTEGER_POLYNOMIAL_GCD_PROBLEM) == {
         "K": 40,
         "e": 3,
         "N": 2023,
@@ -95,7 +108,7 @@ def test_integer_polynomial_gcd_factorization_has_multiplicity_48():
 
 
 def test_integer_polynomial_candidate_48_passes():
-    result = _verify_integer_polynomial_value_gcd(_item("omni_eval_001640")["problem"], "48")
+    result = _verify_integer_polynomial_value_gcd(INTEGER_POLYNOMIAL_GCD_PROBLEM, "48")
     assert result["status"] == VERIFICATION_PASSED
     assert result["reason"] == "deterministic_integer_polynomial_gcd_verification_passed"
     assert result["subreason"] == "prime_factor_multiplicity_verified"
@@ -103,7 +116,7 @@ def test_integer_polynomial_candidate_48_passes():
 
 
 def test_integer_polynomial_candidate_3_fails():
-    result = _verify_integer_polynomial_value_gcd(_item("omni_eval_001640")["problem"], "3")
+    result = _verify_integer_polynomial_value_gcd(INTEGER_POLYNOMIAL_GCD_PROBLEM, "3")
     assert result["status"] == VERIFICATION_FAILED
     assert result["reason"] == "short_answer_verification_failed"
     assert result["subreason"] == "prime_factor_multiplicity_mismatch"
@@ -113,7 +126,7 @@ def test_integer_polynomial_candidate_3_fails():
 def test_integer_polynomial_verifier_does_not_read_metadata_expected_answer():
     client = FakeClient(_tagged(r"Exact computation gives \boxed{48}."))
     result = ReasoningAgent(client).solve(
-        _item("omni_eval_001640")["problem"], {"expected_answer": "3", "solution": "SECRET"}
+        INTEGER_POLYNOMIAL_GCD_PROBLEM, {"expected_answer": "3", "solution": "SECRET"}
     )
     assert result["final_response"] == "48"
     assert result["mathematical_verification_status"] == VERIFICATION_PASSED
@@ -136,14 +149,14 @@ def test_unexpected_large_residual_is_unknown(monkeypatch):
         "_prime_factor_multiplicity_up_to_k",
         lambda value, limit: (1, 101, {2: 1}),
     )
-    result = _verify_integer_polynomial_value_gcd(_item("omni_eval_001640")["problem"], "48")
+    result = _verify_integer_polynomial_value_gcd(INTEGER_POLYNOMIAL_GCD_PROBLEM, "48")
     assert result["status"] == "unknown"
     assert result["reason"] == "unexpected_large_prime_factor"
 
 
 def test_two_wrong_integer_polynomial_answers_use_deterministic_override():
     client = FakeClient([_tagged(r"Thus \boxed{3}."), _tagged(r"Again \boxed{3}.")])
-    result = ReasoningAgent(client).solve(_item("omni_eval_001640")["problem"], {})
+    result = ReasoningAgent(client).solve(INTEGER_POLYNOMIAL_GCD_PROBLEM, {})
     assert len(client.calls) == 2
     assert result["final_response"] == "48"
     assert result["deterministic_answer_override"] is True
@@ -152,7 +165,7 @@ def test_two_wrong_integer_polynomial_answers_use_deterministic_override():
 
 def test_no_dedicated_verifier_never_uses_override():
     client = FakeClient(_tagged(r"The listed factors total \boxed{6}."))
-    result = ReasoningAgent(client).solve(_item("omni_eval_000934")["problem"], {})
+    result = ReasoningAgent(client).solve(POLYNOMIAL_FACTOR_COUNT_PROBLEM, {})
     assert result["final_response"] == "6"
     assert result["mathematical_verification_status"] == VERIFICATION_NOT_APPLICABLE
     assert result["deterministic_answer_override"] is False
@@ -221,7 +234,7 @@ def test_repetition_retry_prompt_does_not_contain_first_answer():
     assert "Do not repeat the conclusion." in prompt
 
 
-def test_000934_style_repetition_cannot_pass_quality():
+def test_incomplete_repetition_style_cannot_pass_quality():
     body = ("The correct answer is boxed 6. " * 390) + "The correct answer is"
     assert len(body) > 12000
     quality = _quality(body, "6")
@@ -231,16 +244,18 @@ def test_000934_style_repetition_cannot_pass_quality():
 
 
 def test_factorial_floor_2000_and_2001_regression():
-    problem = _item("omni_eval_000817")["problem"]
-    assert _verify_factorial_floor_exact(problem, "2000")["status"] == VERIFICATION_PASSED
-    wrong = _verify_factorial_floor_exact(problem, "2001")
+    assert (
+        _verify_factorial_floor_exact(FACTORIAL_FLOOR_PROBLEM, "2000")["status"]
+        == VERIFICATION_PASSED
+    )
+    wrong = _verify_factorial_floor_exact(FACTORIAL_FLOOR_PROBLEM, "2001")
     assert wrong["status"] == VERIFICATION_FAILED
     assert wrong["subreason"] == "floor_value_mismatch"
 
 
 def test_two_wrong_factorial_answers_use_deterministic_override():
     client = FakeClient([_tagged(r"Thus \boxed{2001}."), _tagged(r"Again \boxed{2001}.")])
-    result = ReasoningAgent(client).solve(_item("omni_eval_000817")["problem"], {})
+    result = ReasoningAgent(client).solve(FACTORIAL_FLOOR_PROBLEM, {})
     assert result["final_response"] == "2000"
     assert result["deterministic_answer_override"] is True
     assert result["override_verifier_name"] == "factorial_floor_exact"
@@ -254,7 +269,7 @@ def test_not_applicable_reliability_is_unverified_manual_review():
 
 
 def test_runner_saves_unverified_numeric_reliability_fields():
-    item = _item("omni_eval_000934")
+    item = _synthetic_item(POLYNOMIAL_FACTOR_COUNT_PROBLEM)
     run = evaluate_item(
         item,
         FakeClient(_tagged(r"The factor count is \boxed{5}.")),
