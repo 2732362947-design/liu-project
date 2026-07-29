@@ -28,3 +28,11 @@ outputs_user_agent_omni/
 # Real API local smoke outputs
 outputs/real_user_agent_smoke.json
 outputs/real_*smoke*.json
+
+# Generated Omni-MATH evaluation artifacts
+evaluation/results/*
+!evaluation/results/.gitkeep
+evaluation/reports/*
+!evaluation/reports/.gitkeep
+outputs/*real_api*
+outputs/*omni*
