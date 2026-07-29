@@ -3,6 +3,139 @@ import re
 from fractions import Fraction
 
 
+MAX_EXTRACTOR_INPUT_CHARS = 65536
+MAX_LATEX_CANDIDATE_CHARS = 8192
+MAX_LATEX_NESTING_DEPTH = 32
+MAX_STRUCTURED_CANDIDATES = 16
+
+
+def _is_escaped(text: str, index: int) -> bool:
+    backslashes = 0
+    index -= 1
+    while index >= 0 and text[index] == "\\":
+        backslashes += 1
+        index -= 1
+    return bool(backslashes % 2)
+
+
+def _balanced_braced_content(
+    text: str,
+    opening_index: int,
+) -> tuple[str, int] | None:
+    if (
+        not 0 <= opening_index < len(text)
+        or text[opening_index] != "{"
+        or _is_escaped(text, opening_index)
+    ):
+        return None
+    depth = 0
+    for index in range(opening_index, len(text)):
+        char = text[index]
+        if _is_escaped(text, index):
+            continue
+        if char == "{":
+            depth += 1
+            if depth > MAX_LATEX_NESTING_DEPTH:
+                return None
+        elif char == "}":
+            depth -= 1
+            if depth < 0:
+                return None
+            if depth == 0:
+                content = text[opening_index + 1 : index].strip()
+                if not content or len(content) > MAX_LATEX_CANDIDATE_CHARS:
+                    return None
+                return content, index + 1
+    return None
+
+
+def _extract_balanced_boxed_candidates(solution: str) -> list[str]:
+    text = str(solution or "")
+    if not text or len(text) > MAX_EXTRACTOR_INPUT_CHARS:
+        return []
+    candidates: list[str] = []
+    offset = 0
+    while offset < len(text) and len(candidates) < MAX_STRUCTURED_CANDIDATES:
+        match = re.search(r"\\boxed\s*\{", text[offset:])
+        if match is None:
+            break
+        opening_index = offset + match.end() - 1
+        balanced = _balanced_braced_content(text, opening_index)
+        if balanced is None:
+            offset = opening_index + 1
+            continue
+        candidate, end_index = balanced
+        candidates.append(candidate)
+        offset = end_index
+    return candidates
+
+
+def _complete_math_wrapper_at(text: str, start: int) -> str | None:
+    while start < len(text) and text[start].isspace():
+        start += 1
+    if start >= len(text):
+        return None
+
+    boxed = re.match(r"\\boxed\s*\{", text[start:])
+    if boxed is not None:
+        opening_index = start + boxed.end() - 1
+        balanced = _balanced_braced_content(text, opening_index)
+        return balanced[0] if balanced is not None else None
+
+    delimiters = ((r"\[", r"\]"), (r"\(", r"\)"), ("$$", "$$"), ("$", "$"))
+    for opening, closing in delimiters:
+        if not text.startswith(opening, start):
+            continue
+        content_start = start + len(opening)
+        depth = 0
+        index = content_start
+        while index < len(text):
+            if (
+                text.startswith(closing, index)
+                and depth == 0
+                and not _is_escaped(text, index)
+            ):
+                candidate = text[start : index + len(closing)]
+                return (
+                    candidate
+                    if len(candidate) <= MAX_LATEX_CANDIDATE_CHARS
+                    else None
+                )
+            char = text[index]
+            if not _is_escaped(text, index):
+                if char == "{":
+                    depth += 1
+                    if depth > MAX_LATEX_NESTING_DEPTH:
+                        return None
+                elif char == "}":
+                    depth -= 1
+                    if depth < 0:
+                        return None
+            index += 1
+        return None
+    return None
+
+
+def _extract_marked_math_block(solution: str) -> str | None:
+    text = str(solution or "")
+    if not text or len(text) > MAX_EXTRACTOR_INPUT_CHARS:
+        return None
+    marker_pattern = re.compile(
+        r"^[ \t]*(?:[-*]\s*)?(?:\*\*)?\s*"
+        r"(?:final\s+answer|answer|最终答案|答案)\s*[:：]\s*"
+        r"(?:\*\*)?[ \t]*\r?\n",
+        flags=re.IGNORECASE | re.MULTILINE,
+    )
+    candidates: list[str] = []
+    for marker in marker_pattern.finditer(text):
+        candidate = _complete_math_wrapper_at(text, marker.end())
+        if candidate is not None and candidate not in candidates:
+            candidates.append(candidate)
+            if len(candidates) > 1:
+                return None
+    return candidates[0] if candidates else None
+
+
 def _normalize_number(value: float) -> str:
     if math.isclose(value, round(value), rel_tol=1e-9, abs_tol=1e-9):
         return str(int(round(value)))
@@ -18,9 +151,11 @@ def _clean_answer(answer: str) -> str:
 
 def _unwrap_boxed(answer: str) -> str:
     text = answer.strip()
-    match = re.fullmatch(r"\\boxed\{(.+)\}", text)
+    match = re.match(r"\\boxed\s*\{", text)
     if match:
-        return match.group(1).strip()
+        balanced = _balanced_braced_content(text, match.end() - 1)
+        if balanced is not None and balanced[1] == len(text):
+            return balanced[0]
     return text
 
 
@@ -74,7 +209,7 @@ def _extract_near_keywords(solution: str) -> str | None:
                 answer = _clean_answer(answer)
                 if answer:
                     return _unwrap_boxed(answer)
-    return None
+    return _extract_marked_math_block(solution)
 
 
 def _is_generic_proof_ending(answer: str) -> bool:
@@ -188,10 +323,8 @@ def _extract_last_number(solution: str) -> str | None:
 
 
 def _extract_boxed_answer(solution: str) -> str | None:
-    match = re.search(r"\\boxed\{((?:[^{}]|\\frac\{[^{}]+\}\{[^{}]+\})+)\}", solution)
-    if match:
-        return match.group(1).strip()
-    return None
+    candidates = _extract_balanced_boxed_candidates(solution)
+    return candidates[0] if candidates else None
 
 
 def _extract_no_solution_answer(solution: str) -> str | None:
